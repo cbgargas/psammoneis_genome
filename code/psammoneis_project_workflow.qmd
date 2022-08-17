@@ -1,0 +1,2725 @@
+---
+title: "Psammoneis HGT project"
+author: "Cory Gargas"
+date: "11/2/2021"
+format:
+  html:
+    theme: 
+      light: flatly
+      dark: darkly
+---
+
+```{r}
+#| label: setup
+#| include: false
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(report, skimr, janitor, glue, ggridges, ggdist, ggtext, ggside, GenomicRanges, here, reshape2, tidyverse, tidylog, patchwork, seqinr, coRdon, data.table, TidyDensity)
+```
+
+Note: the full code for all scripts mentioned in this document can be found in the appendix at the end of this RMD file.
+
+# Intergenic region - HGT index evaluation
+
+<hr />
+
+Starting off, we downloaded our reference sequences (sseqid) which we will blast our intergenic sequences (qseqid) against. We downloaded the reviewed Swiss-Prot sequences for Eukaryote, Archaea, and Bacteria protein sequences from UniProt as fasta files.\
+We then concatenated the fasta files for Archaea and bacteria into a single fasta file.
+
+Below, we describe the code used on the AHPCC computing cluster to conduct this analysis (See 'submit_intergenic_HGT_DMNDblast_uniprot_workflow_psam_768gb.slurm' for the actual slurm file).
+
+## AHPCC analysis walkthrough
+
+First, we extract the CDS annotated regions of each .gff file from our bacterial genomes that were sequenced from our Psammoneis culture. We performed this using the Rscript 'gff_filter_rename_bac.R'.
+
+We then use bedtools getfasta to extract the fasta sequences for those CDS annotations:
+
+    bedtools getfasta -fi 000000F.quiver_pilon.n_f.fasta -bed 0F.gff -fo 000000F.fa -s
+    bedtools getfasta -fi 000001F.quiver_pilon.n_f.fasta -bed 1F.gff -fo 000001F.fa -s
+    bedtools getfasta -fi 000002F.quiver_pilon.n_f.fasta -bed 2F.gff -fo 000002F.fa -s
+    bedtools getfasta -fi 000003F.quiver_pilon.n_f.fasta -bed 3F.gff -fo 000003F.fa -s
+
+Then we translate those bacterial sequences into amino acid (AA) sequences using the Rscript 'translate_cds.R':
+
+    Rscript translate_cds.R
+
+Next, we need to get the intergenic regions of our Psammoneis genome. We start off by generating our genomefile for bedtools. Using Samtools faidx we generate a .fai file, then use cut to extract the 1st two columns from the .fai file (e.g., chromosome name, number of bases per chromosome). Lastly, we sort it to match the sorted .gff file we generate later.
+
+        samtools faidx psam.final_assembly.Quiver_Pilon_Reapr_GapCloser.fa 
+
+        cut -f1,2 psam.final_assembly.Quiver_Pilon_Reapr_GapCloser.fa.fai > sizes.genome
+
+        sort -k 3 sizes.genome > sizes_sorted.genome
+
+alternatively, you can use the following instead of the samtools method to generate a genome file:
+
+        grep contig result_sorted.gff | cut -f 1,5 > sizes_sorted.genome
+
+then we need to remove the fasta sequences from the end of our genome
+
+This gives us the line number that the fasta sequences starts at.
+
+        egrep -n -m 1 '##FASTA' psamm_final.round4.all.gff
+
+Then we use head with the value we got, minus one, (e.g., line_number - 1) to just give us the gff lines
+
+        head -n 1070595 psamm_final.round4.all.gff > result.gff
+
+Next we need to sort our .gff file so bedtools doesn't get mad at us.
+
+        bedtools sort -i result.gff > result_sorted.gff
+
+and remove contig annotations from our .gff (or else we won't get an complement output)
+
+        grep -v contig result_sorted.gff > result_sorted_final.gff
+
+next, we run bedtools complement to get our intergenic .gff file
+
+        bedtools complement -i result_sorted_final.gff -g sizes_sorted.genome > psamm_complement.txt
+
+Finally, we run bedtools getfasta on our genome, using the complement .gff file to extract sequences for our intergenic regions.
+
+        bedtools getfasta -fi psam.final_assembly.Quiver_Pilon_Reapr_GapCloser.fa -bed psamm_complement.txt -fo psamm_complement.fa
+
+Next, we run orfipy to get our ORFs (open reading frames) from our intergenic regions.
+
+        orfipy psamm_complement_intergenic.fa --pep psamm_complement_ORFs_orfipy.faa --dna psamm_complement_ORFs_orfipy.fa  --strand b --between-stops --include-stop --min 30
+
+We also make delimited files of the headers for both .faa and .fa ORF files for downstream analysis in R.
+
+    grep '>' psamm_complement_ORFs_orfipy.faa > psamm_complement_ORFs_orfipy.faa.headers.delim
+    grep '>' psamm_complement_ORFs_orfipy.fa > psamm_complement_ORFs_orfipy.fa.headers.delim
+
+Make some directories for our intergenic files
+
+        mkdir 03_psam_intergenic
+
+        mv psamm_complement_edit.bed result_sorted_final.gff psamm.genomeFile psamm_complement_intergenic.fa orfipy_psamm_complement.fa_out 03_psam_intergenic/
+
+Now that we have our ORFs from the intergenic regions of our Psammoneis genome, we need to extract CDS sequences from both Psammoneis and the bacterial genomes associated with it. We do this using the Rscript 'gff_filter_rename_bac.R' and bedtools getfasta:
+
+    Rscript gff_filter_rename_bac.R
+
+    bedtools getfasta -fi 000000F.quiver_pilon.n_f.fasta -bed 0F.gff -fo 000000F.fa -s
+    bedtools getfasta -fi 000001F.quiver_pilon.n_f.fasta -bed 1F.gff -fo 000001F.fa -s
+    bedtools getfasta -fi 000002F.quiver_pilon.n_f.fasta -bed 2F.gff -fo 000002F.fa -s
+    bedtools getfasta -fi 000003F.quiver_pilon.n_f.fasta -bed 3F.gff -fo 000003F.fa -s
+
+Next we run our 'translate_cds.R' on the fasta files from above and make new directrories for our output files:
+
+        Rscript translate_cds.R
+
+        #make output directories for output
+        mkdir 01_genomes_CDS
+        mkdir 02_genomes_CDS_translated 
+
+        # copy all output files from R
+        mv *_CDS.fa 01_genomes_CDS/
+        mv  *.faa 02_genomes_CDS_translated/
+
+Then we append our bacterial CDS AA sequences to our .fna file for blast input
+
+        cat 02_genomes_CDS_translated/00000*F_gff.faa >> uniprot_reviewed_Arc_2157_Bac_2.fasta
+
+Next up we make our Diamond blast databases using the UniProt protein sequences we downloaded at the beginning:
+
+    echo 'Make Diamond DB using NR + 0-3F bacterial genomes'
+    diamond makedb --in uniprot_reviewed_Arc_2157_Bac_2.fasta -d uniprot_prok
+    diamond makedb --in uniprot-reviewed_yes+taxonomy_2759_eukaryota.fasta -d uniprot_euk
+
+    mkdir uniprot_dmnd/
+
+    mv *.dmnd uniprot_dmnd/
+
+Now we can finally run Diamond blastp to get our donor and recipient blast outputs:
+
+    diamond blastp -f 6 -q orfipy_psamm_complement_intergenic.fa_out/psamm_complement_ORFs_orfipy.faa  -d uniprot_dmnd/uniprot_prok.dmnd -k 5 -o intergenic_dmnd_uniprot_prok.out.tsv -v -p 4 -b12 -c1
+
+    diamond blastp -f 6 -q orfipy_psamm_complement_intergenic.fa_out/psamm_complement_ORFs_orfipy.faa  -d uniprot_dmnd/uniprot_euk.dmnd -k 5 -o intergenic_dmnd_uniprot_euk.out.tsv -v -p 4 -b12 -c1
+
+    mkdir dmnd_blastp_hgt_output
+    cp *.out.tsv dmnd_blastp_hgt_output
+
+    mkdir DMNDblastp_uniprot_output_psam/
+
+    # copy the output files to directory
+    cp -r result.gff result_sorted.gff psamm.genomeFile psamm_complement.txt orfipy_psamm_complement_intergenic.fa_out psamm_complement_edit.bed uniprot_dmnd/ dmnd_blastp_hgt_output/ 02_genomes_CDS_translated/ 01_genomes_CDS/ 03_psam_intergenic/psam_intergenic_and_CDS.faa DMNDblastp_uniprot_output_psam/
+
+## HGT index output and analysis
+
+Next we use the R code below to process our output files and calculate the HGT index for our hits:
+
+```{r}
+#| label: Process intergenic HGT output
+
+colnames_donor <- c("qseqid", "sseqid_d", "pident_d", "length_d", "mismatch_d", "gapopen_d", "qstart_d", "qend_d", "sstart_d", "send_d", "evalue_d", "bitscore_d")
+colnames_recipients <- c("qseqid", "sseqid_r", "pident_r", "length_r", "mismatch_r", "gapopen_r", "qstart_r", "qend_r", "sstart_r", "send_r", "evalue_r", "bitscore_r")
+
+ORF_headers <-
+  read_delim(file = here("data","01_psam_intergenic_HGT_index","psam_genome","orfipy_psamm_complement_intergenic.fa_out","psamm_complement_ORFs_orfipy_headers.delim"), delim = " ", col_names = c("qseqid", "coords_strand", "type", "length", "frame", "start", "stop")) %>%
+  mutate(across(
+    .cols = everything(),
+    .fns = ~ str_remove(
+      string = .x,
+      pattern = "^>|^type:|^length:|^frame:|^start:|^stop:"
+    )
+  )) %>%
+  separate(qseqid, sep = ":", into = c("chrm", "length_orf"), remove = F) %>% # split and clean qseqid
+  separate(length_orf, sep = "_", into = c("length_orf", "orf_id"), remove = T) %>% # split ORF names 2
+  mutate(length_orf = str_replace_all(string = length_orf, pattern = "[/(/)$]", replacement = "")) %>% # remove () from orf length
+  mutate(chrm = str_replace_all(string = chrm, pattern = "_quiver_pilon$", replacement = "")) %>% # remove quiver pilon from chrm
+  mutate(strand = str_extract_all(coords_strand, "\\(\\+\\)|\\(\\-\\)")) %>%
+  mutate(strand = str_replace_all(string = strand, pattern = "^\\(|\\)$", replacement = "")) %>% # split coords_strand
+  mutate(coords_strand = str_replace_all(string = coords_strand, pattern = "^\\[|\\]|\\(|\\+\\)$|\\-\\)$", replacement = "")) %>% # split coords_strand
+  dplyr::rename(coords = coords_strand)
+
+uniprot_reviewed <-
+  read_tsv(file = here("data", "uniprot-reviewed_yes.tsv"), col_names = T) %>%
+  as.data.frame() %>%
+  clean_names()
+
+
+# get the directory our bacterial genome GFF annotation files are in
+bac_gff_directory <-
+  here("data","01_psam_intergenic_HGT_index","psam_bac_genomes")
+
+
+# list the gff files in each directory as a variable
+bac_gff_files <-
+  list.files(path = bac_gff_directory, full.names = T, pattern = "\\.gff")
+
+
+# Here we use fread, lapply, and bind_rows to read in all of our GFF files and bind them by row (i.e., concatenating them) into a single data frame.
+bac_gff <-
+  bind_rows(lapply(bac_gff_files, fread, skip=1, header=F, 
+col.names = c("chrm_bac","source","feature_type","feature_start","feature_end","score","strand","phase","attributes"))) %>%
+  filter(feature_type == "CDS") %>% 
+  mutate(attributes = str_remove(attributes, "ID\\=fig\\|203682\\.28\\.peg\\.|ID\\=fig\\|41295\\.5\\.peg\\.|ID\\=fig\\|89373\\.5\\.peg\\.|ID\\=fig\\|1813606\\.4\\.peg\\.")) %>% 
+  separate(col = attributes, into = c("bac_gen_peg", "bac_gen_gene_annotation"), sep = ";") %>% 
+  mutate(bac_gen_gene_annotation = str_remove(bac_gen_gene_annotation, "Name\\=")) %>% 
+  mutate(length_bac = paste(feature_start,"-",feature_end, "(", strand, ")", sep = "")) %>%
+  select(-c("feature_type","feature_start","feature_end","score","strand")) %>% 
+  mutate(chrm_bac = str_remove(chrm_bac, pattern = "^00000")) 
+
+# import our eukaryotic HGT blast output
+euk <-
+  read_tsv(file = here("data","01_psam_intergenic_HGT_index","DMNDblastp_uniprot_output_psam","dmnd_blastp_hgt_output","intergenic_dmnd_uniprot_euk.out.tsv"), col_names = colnames_recipients, progress = T) %>%
+  group_by(qseqid) %>% # group our data by sqeqid
+  top_n(1, bitscore_r) %>% # select the top blast search result by bitscore for each seq_id
+  dplyr::slice(1) %>%
+  ungroup()
+
+# import our prokaryotic HGT blast output
+prok <-
+  read_tsv(file = here("data","01_psam_intergenic_HGT_index","DMNDblastp_uniprot_output_psam","dmnd_blastp_hgt_output","intergenic_dmnd_uniprot_prok.out.tsv"), col_names = colnames_donor, progress = T) %>%
+  group_by(qseqid) %>% # group our data by sqeqid
+  top_n(1, bitscore_d) %>% # select the top blast search result by bitscore for each seq_id
+  dplyr::slice(1) %>%
+  ungroup()
+
+
+# Join our ukaryotic and prokaryotic blast search results to calculate the HGT index
+file3 <-
+  full_join(euk, prok, by = "qseqid") %>% # join our two tables by query sequence ID
+    replace_na(list( 
+    bitscore_d = 0,
+    bitscore_r = 0
+  )) %>% # here we replace all null values in recipient and donor bitscores with zeros. This is necessary to assign our 'strong' domain classes.
+  mutate(h = bitscore_d - bitscore_r) %>% # calculate HGT index (h)colmean
+  mutate(
+    domain_assignment = # create domain assignment column
+      case_when(
+        # strong prokaryote
+        bitscore_r == 0 & h >= 30 ~ "prokaryote_strong",
+        # strong eukaryote
+        bitscore_d == 0 & h <= 0 ~ "eukaryote_strong",
+        # prokaryote
+        h >= 30 ~ "prokaryote",
+        # eukaryote
+        h <= 0 ~ "eukaryote",
+        # indeterminate
+        between(h, 0, 30) ~ "indeterminate"
+      )
+  )
+
+# append our uniprot and ORF header info to the first dataframe
+file3_uniprot <-
+  file3 %>%
+  separate(qseqid, sep = ":", into = c("chrm", "length_orf"), remove = F) %>% # split ORF names
+  separate(length_orf, sep = "_", into = c("length_orf", "orf_id"), remove = T) %>% # split ORF names 2
+  separate(sseqid_r, sep = "\\|", into = c("uniprot_prefix_r", "uniprot_id_r", "product_r"), remove = T) %>% # sseqid_r split
+  separate(sseqid_d, sep = "\\|", into = c("uniprot_prefix_d", "uniprot_id_d", "product_d"), remove = F) %>% # uniprot hits
+  separate(sseqid_d, sep = "\\.", into = c("chrm_bac", "bac_gen_peg"), remove = T) %>% # bacterial genome hits
+  mutate(length_orf = str_replace_all(string = length_orf, pattern = "[/(/)$]", replacement = "")) %>% # remove () from orf length
+  mutate(chrm = str_replace_all(string = chrm, pattern = "_quiver_pilon$", replacement = "")) %>% # remove quiver pilon from chrm
+  left_join(., uniprot_reviewed, by = c("uniprot_id_r" = "entry")) %>% # Join Uniprot info to recipient hits
+  select(-c(starts_with("uniprot_prefix"))) %>%
+  dplyr::rename(
+    entry_name_uniprot_r = entry_name, gene_ontology_biological_process_uniprot_r = gene_ontology_biological_process, gene_ontology_molecular_function_uniprot_r = gene_ontology_molecular_function, gene_names_uniprot_r = gene_names,
+    organism_uniprot_r = organism, taxonomic_lineage_superkingdom_r = taxonomic_lineage_superkingdom
+  ) %>%
+  left_join(., uniprot_reviewed, by = c("uniprot_id_d" = "entry")) %>% # Join Uniprot info to donor hits
+  dplyr::rename(
+    entry_name_uniprot_d = entry_name, gene_ontology_biological_process_uniprot_d = gene_ontology_biological_process, gene_ontology_molecular_function_uniprot_d = gene_ontology_molecular_function, gene_names_uniprot_d = gene_names,
+    organism_uniprot_d = organism, taxonomic_lineage_superkingdom_d = taxonomic_lineage_superkingdom
+  ) %>%
+  left_join(., ORF_headers, by = c("qseqid", "chrm", "length_orf", "orf_id")) %>% # join ORF information
+  left_join(., bac_gff, by = c("chrm_bac","bac_gen_peg")) %>% # join our gff info
+  as.data.frame() %>% 
+  mutate(taxonomic_lineage_superkingdom_d = ifelse(is.na(taxonomic_lineage_superkingdom_d), "Bacteria", taxonomic_lineage_superkingdom_d)) %>% # replace NAs in superkingdom column with bacteria for our bacterial genome hits
+  mutate(
+      organism_uniprot_d = # assign taxonomy of our bacterial genomes tp organism_uniprot_d column
+        case_when(
+          # strong prokaryote
+          chrm_bac == "0F" ~ "Phycisphaerae sp.",
+          chrm_bac == "1F" ~ "Rhodovibrionaceae sp.",
+          chrm_bac == "2F" ~ "Ekhidna sp.",
+          chrm_bac == "3F" ~ "Balneola sp.",
+        )
+    ) 
+# get a list of uniprot IDs in chrm_bac for removal
+remove_these <-
+  (file3_uniprot %>%
+    select(chrm_bac) %>%
+    filter(!chrm_bac %in% c("0F", "1F", "2F", "3F")) %>%
+    filter(!is.na(chrm_bac))
+  )[["chrm_bac"]]
+
+# render non 0-3F entries as NAs
+file3_uniprot$chrm_bac[file3_uniprot$chrm_bac %in% remove_these] <- NA
+
+# here we will get the uniprot IDs to download the respective sequences with
+
+# Get habitat for each hit
+# export the uniprot IDs first
+# file3_uniprot_prok_hits <-
+#  file3_uniprot %>%
+#   filter(domain_assignment == "prokaryote" | domain_assignment == "prokaryote_strong") %>%
+#    select(organism_uniprot_d) %>%
+#   filter(!is.na(organism_uniprot_d))
+
+# write_tsv(file3_uniprot_prok_hits, file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/file3_uniprot_prok_hits.tsv")
+
+# import the updated tsv
+file3_uniprot_prok_hits_eco <-
+  read_tsv(
+    file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/file3_uniprot_prok_hits_ecology_domain.tsv",
+    col_names = c("organism_uniprot_d", "ecology_broad", "ecology_fine", "domain"), skip = 1
+  ) %>%
+  unique() %>%
+  left_join(
+    (file3_uniprot %>%
+      filter(domain_assignment == "prokaryote" | domain_assignment == "prokaryote_strong")),
+    .,
+    by = "organism_uniprot_d"
+  )
+
+# generate just the bac genome hits for our alignment investigation later
+file3_uniprot_prok_hits_0Fthru3F <-
+  file3_uniprot_prok_hits_eco %>% 
+  filter(!is.na(chrm_bac)) %>% 
+  mutate(header = paste(chrm_bac, length_bac, sep = ":"))
+
+# here we will have an unsliced version of the above so that we can isolate all of the best prokarayote hits to our porkaryote/prokaryote_strong h index classifications.
+# once we have this, we will download these nuclotide sequences and align them with our qseqid.
+prok_unSliced <-
+  read_tsv(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/DMNDblastp_uniprot_output_psam/dmnd_blastp_hgt_output/intergenic_dmnd_uniprot_prok.out.tsv", col_names = colnames_donor, progress = T) %>%
+  group_by(qseqid) %>% # group our data by sqeqid
+  dplyr::filter(qseqid %in% file3_uniprot_prok_hits_eco$qseqid) %>%
+  ungroup() %>%
+  separate(sseqid_d, sep = "\\|", into = c("uniprot_prefix_d", "uniprot_id_d", "product_d"), remove = F) %>% # uniprot hits
+  separate(sseqid_d, sep = ":", into = c("chrm_bac", "length_bac"), remove = T) %>% # bacterial genome hits
+  select(-c(starts_with("uniprot_prefix"))) %>%
+  select(uniprot_id_d) %>%
+  filter(!is.na(uniprot_id_d)) %>%
+  unique()
+
+# write it!
+write_delim(prok_unSliced, file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/file3_uniprot_prok_IDs_all_hits.delim", delim = " ", col_names = FALSE)
+
+# read in out output from uniprot search
+uniprot2ncbi_ids_all_hits <-
+  read_tsv(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/uniprot-yourlist_M20220411A084FC58F6BBA219896F365D15F2EB444998D7P.tab", col_names = TRUE, col_types = NULL) %>%
+  janitor::clean_names() %>%
+  left_join(
+    (read_tsv(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/DMNDblastp_uniprot_output_psam/dmnd_blastp_hgt_output/intergenic_dmnd_uniprot_prok.out.tsv", col_names = colnames_donor, progress = T) %>%
+      group_by(qseqid) %>% # group our data by sqeqid
+      dplyr::filter(qseqid %in% file3_uniprot_prok_hits_eco$qseqid) %>%
+      ungroup() %>%
+      separate(sseqid_d, sep = "\\|", into = c("uniprot_prefix_d", "uniprot_id_d", "product_d"), remove = T) %>% # uniprot hits
+      select(-c(starts_with("uniprot_prefix")))),
+    .,
+    by = c("uniprot_id_d" = "entry")
+  ) %>%
+  mutate(cross_reference_ref_seq = str_extract(cross_reference_ref_seq, "WP_[:digit:]+.1")) %>%
+  rename(sseqid = cross_reference_ref_seq) %>%
+  dplyr::select(-c(entry_name, uniprot_id_d, product_d)) %>%
+  drop_na() %>%
+  relocate(sseqid, .after = qseqid)
+
+write_tsv(uniprot2ncbi_ids_all_hits, file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/uniprot2ncbi_ids_all_hits.tsv", col_names = FALSE)
+
+rm(euk, prok, ORF_headers, uniprot_reviewed, file3, colnames_donor, colnames_recipients, remove_these, bac_gff_directory, bac_gff_files)
+```
+
+```{r hgt index data summaries}
+#  # X is a sample of 100 normally distributed random variables
+# P = ecdf(file3$h)    # P is a function giving the empirical CDF of X
+# P(0.0)         # This returns the empirical CDF at zero (should be close to 0.5)
+# plot(P)
+
+file3_uniprot %>%
+  select(evalue_r, evalue_d, bitscore_r, bitscore_d, h) %>%
+  summary()
+
+file3_uniprot %>%
+  group_by(domain_assignment) %>%
+  summarise(cnt = dplyr::n()) %>%
+  mutate(freq = round(cnt / sum(cnt), 3)) %>%
+  dplyr::arrange(desc(freq))
+
+# table(file3_uniprot_prok_hits_eco$gene_ontology_molecular_function_uniprot_d) %>% 
+#   as.data.frame() %>% 
+#   mutate(Var1 = str_remove_all(Var1, " \\[GO\\:[:digit:]+\\]")) %>% 
+#   ggplot(aes(y=Var1, x = Freq)) +
+#   geom_bar(stat = "identity")
+# 
+# table(file3_uniprot_prok_hits_eco$gene_ontology_biological_process_uniprot_d) %>% 
+#   as.data.frame() %>% 
+#   mutate(Var1 = str_remove_all(Var1, " \\[GO\\:[:digit:]+\\]")) %>% 
+#   ggplot(aes(y=Var1, x = Freq)) +
+#   geom_bar(stat = "identity")
+# 
+# table(file3_uniprot_prok_hits_eco$bac_gen_gene_annotation) %>% 
+#   as.data.frame() %>% 
+#   add_column() %>% 
+#   ggplot(aes(y=Var1, x = Freq)) +
+#   geom_bar(stat = "identity")
+
+# strong prokaryotic blast hits
+file3_uniprot_prok_hits_eco %>% 
+filter(bitscore_d >= 100 & evalue_d <= 1e-12) %>% 
+ nrow()
+
+# strong prokaryotic blast hits to 0F-3F
+file3_uniprot_prok_hits_eco %>% 
+filter(bitscore_d >= 100 & evalue_d <= 1e-12) %>% 
+  filter(!is.na(chrm_bac)) %>% 
+  nrow()
+
+# strong prokaryotic blast hits to uniprot
+file3_uniprot_prok_hits_eco %>% 
+filter(bitscore_d >= 100 & evalue_d <= 1e-12) %>% 
+  filter(is.na(chrm_bac)) %>% 
+  nrow()
+
+# prokaryotic organism hits for bacteria
+file3_uniprot_prok_hits_eco %>% 
+  filter(taxonomic_lineage_superkingdom_d == "Bacteria") %>% 
+  nrow()
+
+# prokaryotic organism hits for archaea
+file3_uniprot_prok_hits_eco %>% 
+  filter(taxonomic_lineage_superkingdom_d == "Archaea") %>% 
+  nrow()
+
+# 
+file3_uniprot_prok_hits_0Fthru3F %>% 
+  select(chrm, chrm_bac) %>% 
+  table(useNA = "ifany")
+
+# Psammoneis chrm with multiple hits to bacterial genomes
+file3_uniprot_prok_hits_0Fthru3F %>% 
+  select(chrm, chrm_bac) %>% 
+  table(useNA = "ifany") %>% 
+  as.data.frame() %>% 
+  filter(Freq > 1)
+
+# Determine which of these psammoneis chrmosomes with multiple hits are hitting to the same bacterial genes
+file3_uniprot_prok_hits_0Fthru3F %>% 
+  filter(chrm %in% c("000002F","000037F","000089F","000103F","000532F")) %>% 
+  arrange(chrm) %>% 
+  select(chrm, chrm_bac, bac_gen_peg) 
+
+# Now, let's check out the ones that have multiple hits to the same bacterial genes
+file3_uniprot_prok_hits_0Fthru3F %>% 
+  filter(chrm %in% c("000002F","000089F","000103F","000532F")) %>% 
+  arrange(chrm) %>% 
+  select(chrm, chrm_bac, bac_gen_peg, qstart_d, qend_d, sstart_d, send_d, type, frame, strand, bac_gen_gene_annotation)
+  
+  
+# Seems like 89F is the only one with sufficient evidence for being the result of pseudogenization
+file3_uniprot_prok_hits_0Fthru3F %>% 
+  filter(chrm == "000089F") %>% 
+  select(-ends_with("_r"))
+
+# 
+file3_uniprot_prok_hits_0Fthru3F %>% 
+  filter(bitscore_d >= 100 & evalue_d <= 1e-12) %>% 
+  filter(chrm_bac == "0F") %>%
+  filter(chrm == "000002F") %>%
+  select(chrm, chrm_bac) %>% 
+  table(useNA = "ifany")
+
+# 
+file3_uniprot_prok_hits_0Fthru3F %>% 
+  filter(bitscore_d >= 100 & evalue_d <= 1e-12) %>% 
+  filter(chrm_bac == "0F") %>%
+  filter(chrm == "000002F") %>%
+  select(chrm, chrm_bac) %>% 
+  table(useNA = "ifany")
+
+# ORF length ranges by domain assignment
+file3_uniprot %>% 
+  select(length, domain_assignment) %>% 
+  mutate(length = as.numeric(length)) %>% 
+  group_by(domain_assignment) %>% 
+  summarise(
+    minlength = min(length),  
+    maxlength = max(length)
+  )
+```
+
+We need to visualize and evaluate our HGT index output to determine what *h* value cutoff we should use to determine the HGT index categories.\
+Based on the visualization below, an *h* value cutoff of 30 should be fine.
+
+```{r}
+#| label: Assess h-value to use as cutoff
+file3_uniprot %>%
+  ggplot(aes(x = h)) +
+  stat_ecdf(geom = "point") +
+  scale_x_continuous(breaks = c(seq(-200, 300, by = 50), 15, 30)) +
+  xlab("HGT index (<i>h</i>)") +
+  ylab("Empirical cumulative distribution of <i>h</i>") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "none",
+    legend.title = element_blank()
+  )
+```
+
+```{r}
+#| label: Get uniprot hit info AND find prokaryote overlaps
+#| eval: false
+
+# get just our prok contigs and sequences
+file3_uniprot_prok <-
+  file3_uniprot %>%
+  filter(domain_assignment == "prokaryote" | domain_assignment == "prokaryote_strong") %>%
+  group_by(chrm) %>% # group by ORF chrm
+  arrange(chrm, length_orf) %>% # arrange by chrm, then length_orf w/in each chrm
+  separate(col = coords, into = c("startcoord_orf", "stopCoord_orf"), remove = T) %>% # split length_orf into startcoord_orf stopCoord_orf
+  # collapse our ranges in each chromosome group
+  select(startcoord_orf, stopCoord_orf, strand, chrm) %>%
+  dplyr::rename("start" = "startcoord_orf", "end" = "stopCoord_orf") %>%
+  mutate(start = as.numeric(start)) %>%
+  mutate(end = as.numeric(end))
+
+
+# Use plyranges and genomicranges::reduce to merge all overlapping seqs per chromosome and strand
+file3_uniprot_prok_overlaps <-
+  file3_uniprot %>%
+  filter(domain_assignment == "prokaryote" | domain_assignment == "prokaryote_strong") %>%
+  group_by(chrm) %>% # group by ORF chrm
+  arrange(chrm, length_orf) %>% # arrange by chrm, then length_orf w/in each chrm
+  separate(col = coords, into = c("startcoord_orf", "stopCoord_orf"), remove = T) %>% # split length_orf into startcoord_orf stopCoord_orf
+  # collapse our ranges in each chromosome group
+  select(startcoord_orf, stopCoord_orf, strand, chrm) %>%
+  dplyr::rename("start" = "startcoord_orf", "end" = "stopCoord_orf") %>%
+  mutate(start = as.numeric(start)) %>%
+  mutate(end = as.numeric(end)) %>%
+  plyranges::as_granges(seqnames = chrm) %>%
+  GenomicRanges::reduce() %>%
+  as.data.frame()
+
+# export these as a bed file
+file3_uniprot_prok_overlaps %>%
+  dplyr::select(seqnames, start, end) %>%
+  write_tsv(., file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/psam_overlaps.bed", col_names = F, )
+
+# extend seqs by 1k length and then reduce
+file3_uniprot_prok_overlaps_1k <-
+  file3_uniprot_prok_overlaps %>%
+  mutate(start_1k = as.numeric(start) - 1000) %>%
+  mutate(stop_1k = as.numeric(end) + 1000)
+
+file3_uniprot_prok_overlaps_1k[file3_uniprot_prok_overlaps_1k < 0] <- 1
+
+file3_uniprot_prok_overlaps_1k <-
+  file3_uniprot_prok_overlaps_1k %>%
+  select(start_1k, stop_1k, strand, seqnames) %>%
+  dplyr::rename("start" = "start_1k", "end" = "stop_1k") %>%
+  mutate(start = as.numeric(start)) %>%
+  mutate(end = as.numeric(end)) %>%
+  plyranges::as_granges(seqnames = seqnames) %>%
+  GenomicRanges::reduce() %>%
+  as.data.frame()
+
+
+# maybe get aa bed file of overlaps that are in the duplicate hits list below
+
+# export these as a bed file
+write_tsv()
+
+# see how many overlaps there are
+inner_join(as.data.frame(table(file3_uniprot_prok$chrm)),
+  as.data.frame(table(file3_uniprot_prok_overlaps$seqnames)),
+  by = "Var1"
+) %>%
+  inner_join(., as.data.frame(table(file3_uniprot_prok_overlaps_1k$seqnames)), by = "Var1") %>%
+  mutate(n_overlaps = Freq.x - Freq.y) %>%
+  mutate(n_overlaps_1k = Freq.x - Freq) %>%
+  summarise(total = sum(Freq.x), sum_nonOverlap = sum(Freq.x) - sum(n_overlaps), sum_nonOverlap_1k = sum(Freq.x) - sum(n_overlaps_1k), sum_overlaps = sum(n_overlaps), sum_overlaps_1k = sum(n_overlaps_1k)) %>%
+  pivot_longer(cols = everything()) %>%
+  ggplot(aes(x = name, y = value, fill = name)) + # Plot with values on top
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = value), vjust = -0.2) +
+  viridis::scale_color_viridis(discrete = T) +
+  viridis::scale_fill_viridis(discrete = T) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 0.5),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "right",
+    legend.title = element_blank()
+  )
+```
+
+```{r}
+#| label: prokaryotic hits to the same gene/organism
+
+# here we will get the uniprot IDs to download the respective sequences with
+file3_uniprot_prok_IDs <-
+  file3_uniprot %>%
+  filter(domain_assignment == "prokaryote" | domain_assignment == "prokaryote_strong") %>%
+  select(entry_name_uniprot_d) %>%
+  filter(!is.na(entry_name_uniprot_d)) %>%
+  distinct()
+
+# write the uniprto IDs into a space-delimited file
+write_delim(file3_uniprot_prok_IDs, file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/file3_uniprot_prok_IDs.delim", delim = " ", col_names = FALSE)
+
+# after we search for the above IDs on uniprot, we need to read this in to filter out just WP ncbi IDs to search for, not all have them so the DF is reduced
+uniprot2ncbi_ids <-
+  read_tsv(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/uniprot-yourlist_M202204014ABAA9BC7178C81CEBC9459510EDDEA34887D7H.tab", col_names = TRUE, col_types = NULL) %>%
+  janitor::clean_names() %>%
+  mutate(cross_reference_ref_seq = str_extract(cross_reference_ref_seq, "WP_[:digit:]+.1")) %>%
+  drop_na() %>%
+  select(cross_reference_ref_seq)
+
+write_delim(uniprot2ncbi_ids, file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/uniprot2ncbi_ids.delim", delim = " ", col_names = FALSE)
+
+# now you can just export those and search them via https://www.uniprot.org/uploadlists/ to get the sequences info/fasta
+
+# Determine if any of the overlapping sequences from each chromosome hit to the same thing
+
+# here we will get all chromosomes that have hits to the same uniprot ID
+file3_uniprot_prok_IDs_dupes <-
+  file3_uniprot %>%
+  filter(domain_assignment == "prokaryote" | domain_assignment == "prokaryote_strong") %>%
+  select(entry_name_uniprot_d, chrm) %>%
+  filter(!is.na(entry_name_uniprot_d)) %>%
+  janitor::get_dupes()
+
+# here we will get all dupes to our bacteria
+file3_chrm_bac_dupes <-
+  file3_uniprot %>%
+  filter(domain_assignment == "prokaryote" | domain_assignment == "prokaryote_strong") %>%
+  select(chrm_bac, chrm) %>%
+  filter(!is.na(chrm_bac)) %>%
+  janitor::get_dupes()
+```
+
+```{r}
+#| label: prokaryote overlap visualizations
+#| eval: false
+
+# visualize
+ir <-
+  IRanges(
+    start = file3_uniprot_prok_overlaps$start,
+    end = file3_uniprot_prok_overlaps$end
+  )
+bins <-
+  disjointBins(IRanges(start(ir), end(ir) + 1))
+
+dat <-
+  cbind(as.data.frame(file3_uniprot_prok_overlaps), bin = bins)
+
+ir_1k <-
+  IRanges(
+    start = file3_uniprot_prok_overlaps_1k$start,
+    end = file3_uniprot_prok_overlaps_1k$end
+  )
+
+bins_1k <-
+  disjointBins(IRanges(start(ir_1k), end(ir_1k) + 1))
+
+dat_1k <-
+  cbind(as.data.frame(file3_uniprot_prok_overlaps_1k), bin = bins_1k)
+
+# visualize density of lengths
+file3_uniprot_prok_overlaps %>%
+  # filter(seqnames == "000015F") %>%
+  ggplot() +
+  geom_density_ridges(aes(x = width, y = strand))
+
+# visualize density of lengths
+file3_uniprot_prok_overlaps %>%
+  # filter(seqnames == "000015F") %>%
+  ggplot(aes(x = width, y = strand)) +
+  stat_slab(aes(thickness = stat(pdf*n)), scale = 0.7) +
+  stat_dotsinterval(side = "bottom", scale = 0.7, slab_size = NA) 
+
+p_dat <-
+  dat %>%
+  # filter(seqnames == "000015F") %>%
+  ggplot() +
+  geom_rect(aes(
+    xmin = start, xmax = end,
+    ymin = bin, ymax = bin + 0.9, fill = seqnames, color = seqnames
+  )) +
+  viridis::scale_color_viridis(discrete = T) +
+  viridis::scale_fill_viridis(discrete = T) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "none",
+    legend.title = element_blank()
+  )
+
+p_dat_1k <-
+  dat_1k %>%
+  # filter(seqnames == "000015F") %>%
+  ggplot() +
+  geom_rect(aes(
+    xmin = start, xmax = end,
+    ymin = bin, ymax = bin + 0.9, fill = seqnames, color = seqnames
+  )) +
+  viridis::scale_color_viridis(discrete = T) +
+  viridis::scale_fill_viridis(discrete = T) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "none",
+    legend.title = element_blank()
+  )
+
+p_dat + p_dat_1k
+```
+
+```{r}
+#| label: prokaryote hit visualizations
+#| eval: false
+
+file3_uniprot %>%
+  select(domain_assignment, starts_with("length_")) %>%
+  pivot_longer(cols = c("length_r", "length_d")) %>%
+  mutate(name = factor(name, levels = c("length_r", "length_d"))) %>%
+  ggplot(aes(y = domain_assignment, x = value, color = name)) +
+  geom_density_ridges(alpha = 0.5) +
+  viridis::scale_color_viridis(discrete = T) +
+  viridis::scale_fill_viridis(discrete = T) +
+  scale_x_continuous(breaks = c(seq(0, 1500, by = 100))) +
+  xlab("Blastp hit length") +
+  ylab("") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "right",
+    legend.title = element_blank()
+  )
+
+
+file3_uniprot %>%
+  select(domain_assignment, starts_with("length_")) %>%
+  pivot_longer(cols = c("length_r", "length_d")) %>%
+  mutate(name = factor(name, levels = c("length_r", "length_d"))) %>%
+  ggplot(aes(x = value, color = name)) +
+  viridis::scale_color_viridis(discrete = T) +
+  viridis::scale_fill_viridis(discrete = T) +
+  stat_ecdf(geom = "point", size = 0.75, alpha = 0.5) +
+  facet_wrap(vars(domain_assignment), scales = "free") +
+  # scale_x_continuous(breaks = c(seq(0, 1500, by = 100))) +
+  xlab("Blastp hit length") +
+  ylab("") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "right",
+    legend.title = element_blank()
+  )
+
+
+
+file3_uniprot_prok_hits_eco %>%
+  tidyr::replace_na(list(domain = "Bacteria")) %>%
+  select(domain) %>%
+  table(useNA = "ifany") %>%
+  as.data.frame() %>%
+  ggplot(aes(x = ., y = Freq, fill = .)) + # Plot with values on top
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = Freq), vjust = -0.15) +
+  viridis::scale_color_viridis(discrete = T) +
+  viridis::scale_fill_viridis(discrete = T) +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "right",
+    legend.title = element_blank()
+  )
+
+
+file3_uniprot_prok_hits_eco %>%
+  tidyr::replace_na(list(ecology_broad = "Marine")) %>%
+  select(ecology_broad) %>%
+  table(useNA = "ifany") %>%
+  as.data.frame() %>%
+  ggplot(aes(x = ., y = Freq, fill = .)) + # Plot with values on top
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = Freq), vjust = -0.15) +
+  viridis::scale_color_viridis(discrete = T) +
+  viridis::scale_fill_viridis(discrete = T) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 0.5),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "none",
+    legend.title = element_blank()
+  )
+```
+
+```{r}
+#| label: sequence similarity ordination prep
+
+# first, read in ORFs and filter to only those with prokaryote hits
+ORFs <-
+  read.fasta(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/psam_genome/orfipy_psamm_complement_intergenic.fa_out/psamm_complement_ORFs_orfipy.fa", as.string = T, seqtype = "DNA")
+
+psamm_cds <-
+  read.fasta(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/DMNDblastp_uniprot_output_psam/01_genomes_CDS/psam_genic.fa", as.string = T, seqtype = "DNA")
+
+# subsample psam CDS genes
+psamm_subsampled <-
+  as.data.frame(do.call(rbind, psamm_cds)) %>%
+  slice_sample(prop = 0.015) %>%
+  rownames_to_column(var = "V2") %>%
+  mutate(V2 = paste(">", V2, sep = "")) %>% # add the carrot to make it the fasta header
+  mutate(V1 = str_replace(V1, "[:punct:]$", "")) # remove the * cstop character so that muscle dowsn't throw a fit
+
+write.table(psamm_subsampled,
+  sep = "\n",
+  file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/sequence_ordination/psam_genic_subsampled.fa",
+  quote = FALSE, row.names = FALSE, col.names = FALSE
+)
+
+# filter those seqs
+ORFs_filt <-
+  as.data.frame(do.call(rbind, ORFs)) %>%
+  rownames_to_column(var = "V2") %>%
+  dplyr::filter(V2 %in% (file3_uniprot %>%
+    filter(domain_assignment == "prokaryote" | domain_assignment == "prokaryote_strong") %>%
+    pull(qseqid))) %>%
+  mutate(V2 = paste(">", V2, sep = "")) %>% # add the carrot to make it the fasta header
+  mutate(V1 = str_replace(V1, "[:punct:]$", "")) # remove the * cstop character so that muscle dowsn't throw a fit
+
+write.table(ORFs_filt[, 1:2],
+  sep = "\n",
+  file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/sequence_ordination/psamm_prokaryote_candidate_ORFs_filtered.fa",
+  quote = FALSE, row.names = FALSE, col.names = FALSE
+)
+
+# rm() objects that aren't needed
+rm(ORFs, ORFs_filt, psamm_cds, psamm_subsampled)
+
+# read in the filtered and subsampled files as codon tables
+ORFs <-
+  codonTable(readSet(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/sequence_ordination/psam_genic_subsampled.fa", ))
+
+psamm_cds <-
+  codonTable(readSet(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/sequence_ordination/psamm_prokaryote_candidate_ORFs_filtered.fa"))
+
+uniprot_nt <-
+  codonTable(readSet(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/sequence_ordination/uniprot_NT_seqs/uniprot_NT_seqs.fa"))
+```
+
+We can see from the graphs and stats below, that the nucleotide sequences of the ORFs and the Psamm CDS sequences display a greater similarity to each other than the ORFs do to the nucleotide sequences of the UniProt nucleotide sequences. Based on this, it seems that the potential HGT candidates were transferred long ago and have started to take on the characteristics of the recipient genome. We will need to download nucleotide sequences for all blast hits and align them to the ORFs to determine what mutations have occurred.
+
+```{r}
+#| label: Codon usage comparison between uniprot hits
+#| eval: false
+
+intraBplot(ORFs, psamm_cds,
+  names = c("ORFs", "psamm_cds"), variable = "MILC", ribosomal = FALSE,
+  size = 1, alpha = 0.5
+)
+
+intraBplot(ORFs, uniprot_nt,
+  names = c("ORFs", "uniprot"), variable = "MILC", ribosomal = FALSE,
+  size = 1, alpha = 0.5
+)
+
+intraBplot(psamm_cds, uniprot_nt,
+  names = c("psamm_cds", "uniprot"), variable = "MILC", ribosomal = FALSE,
+  size = 1, alpha = 0.5
+)
+
+
+ORFs_MILC <-
+  as.data.frame(MILC(ORFs)) %>%
+  rename(milc = self) %>%
+  add_column(group = "ORF")
+
+psamm_cds_MILC <-
+  as.data.frame(MILC(psamm_cds)) %>%
+  rename(milc = self) %>%
+  add_column(group = "Psammoneis_CDS")
+
+uniprot_nt_MILC <-
+  as.data.frame(MILC(uniprot_nt)) %>%
+  rename(milc = self) %>%
+  add_column(group = "uniprot")
+
+dat <-
+  rbind(ORFs_MILC, psamm_cds_MILC, uniprot_nt_MILC)
+
+boxplot(milc ~ group, data = dat)
+
+
+milc_aov <-
+  aov(milc ~ factor(group), data = dat)
+
+summary(milc_aov)
+report(milc_aov)
+
+TukeyHSD(milc_aov, conf.level = .95)
+broom::tidy(TukeyHSD(milc_aov, conf.level = .95))
+
+plot(milc_aov)
+
+# convert codontables to df
+codon_counts <-
+  rbind(
+    (as.data.frame(codonCounts(object = ORFs)) %>%
+      add_column(seqs = ORFs@ID) %>%
+      add_column(color = "blue")),
+    (as.data.frame(codonCounts(object = psamm_cds)) %>%
+      add_column(seqs = psamm_cds@ID) %>%
+      add_column(color = "red")),
+    (as.data.frame(codonCounts(object = uniprot_nt)) %>%
+      add_column(seqs = uniprot_nt@ID) %>%
+      add_column(color = "green"))
+  )
+
+colors <-
+  codon_counts$color
+
+
+# CCA
+ca <- FactoMineR::CA(X = (codon_counts %>%
+  select(-c(color, seqs))))
+
+FactoMineR::plot.CA(ca, label = "row.sup", col.row = colors, col.col = "black", graph.type = "ggplot", new.plot = TRUE)
+
+legend(
+  bty = "y", x = "topright",
+  legend = c("CDS", "ORFs", "Bacteria"),
+  fill = c("red", "blue", "green"),
+  border = "black"
+)
+```
+
+To obtain the nucleotide sequences for our UniProt hits we will need to search the protein accessions in genbank. Then download the GI and summary files. We grep the Accession + GI \# lines out of the summary to join with our late files. We then use the GI number file as input to [NCBI Batch Entrez](https://www.ncbi.nlm.nih.gov/sites/batchentrez) and search against the Identical Protein Groups (IPG) portion of NCBI. We then download the IPG file for our GI hits. From here we read in our files to R and join them based on GI and protein accessions. After that we can pull just the accessions for all nucleotide sequences for our AA sequences and then use those to align our ORFs against.
+
+```{r}
+#| label: UniProt hits IPG files
+
+# read in our fasta file names (named after the protein sequence the nuclotide sequence translates into)
+NT_seq_files <-
+  list.files(path = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/hgt_candidates_alignments/nt_seqs/", full.names = F) 
+
+NT_seq_paths <-
+  list.files(path = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/hgt_candidates_alignments/nt_seqs", full.names = T) 
+
+NT_files_paths <-
+  as.data.frame(cbind(NT_seq_files, NT_seq_paths))
+
+for (n in 1:nrow(NT_files_paths)) {
+  df <- data.frame()
+  {
+    df <- rbind(df,
+    as.data.frame(do.call(rbind, (read.fasta(file = NT_files_paths$NT_seq_paths[n],
+           seqtype = "DNA", as.string = TRUE, whole.header = T))))  %>% 
+    rownames_to_column(var = "header")
+    )
+    }
+  NT_files_paths_seqs <-
+    cbind(NT_files_paths, df)
+}
+
+nt_seqs_df <-
+  as.data.frame(NT_files_paths_seqs) %>% 
+  mutate(sseqid = str_remove(NT_seq_files, "\\.fasta"))
+
+ORF_clstrs <-
+  left_join(uniprot2ncbi_ids_all_hits, nt_seqs_df, by = 'sseqid') %>% 
+  rename(sseqid_seq = V1)
+
+
+# use a for loop to recursively create directories for each ORF alignment
+for (n in 1:length(unique(ORF_clstrs$qseqid))) {
+  dir <- "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/hgt_candidates_alignments/alignments/"
+  {
+    dir.create(path = paste(dir, str_replace(str_remove(unique(ORF_clstrs$qseqid)[n], "\\(\\)"), "\\:", "_"), sep = ""))
+  }}
+
+# Here we coerce our bacterial genome hist into bed files for each genome
+bed_0F <-
+  file3_uniprot %>% 
+  filter(chrm_bac == "000000F") %>% 
+  select(chrm_bac, length_bac) %>% 
+  separate(length_bac, into = c("chromStart","chromEnd"), remove = T, extra = "merge") %>% 
+  add_column("name" = "0F", "score" = 0) %>%  
+  mutate(strand = str_extract(chromEnd, "\\+|\\-")) %>% 
+  mutate(chromEnd = str_remove(chromEnd, "\\(\\+\\)|\\(\\-\\)")) %>% 
+  unique()
+  
+
+bed_1F <-
+  file3_uniprot %>% 
+  filter(chrm_bac == "000001F") %>% 
+  select(chrm_bac, length_bac) %>% 
+  separate(length_bac, into = c("chromStart","chromEnd"), remove = T, extra = "merge") %>% 
+  add_column("name" = "1F", "score" = 0) %>%  
+  mutate(strand = str_extract(chromEnd, "\\+|\\-")) %>% 
+  mutate(chromEnd = str_remove(chromEnd, "\\(\\+\\)|\\(\\-\\)")) %>% 
+  unique()
+  
+
+bed_2F <-
+  file3_uniprot %>% 
+  filter(chrm_bac == "000002F") %>% 
+  select(chrm_bac, length_bac) %>% 
+  separate(length_bac, into = c("chromStart","chromEnd"), remove = T, extra = "merge") %>% 
+  add_column("name" = "2F", "score" = 0) %>%  
+  mutate(strand = str_extract(chromEnd, "\\+|\\-")) %>% 
+  mutate(chromEnd = str_remove(chromEnd, "\\(\\+\\)|\\(\\-\\)")) %>% 
+  unique()
+  
+
+bed_3F <-
+  file3_uniprot %>% 
+  filter(chrm_bac == "000003F") %>% 
+  select(chrm_bac, length_bac) %>% 
+  separate(length_bac, into = c("chromStart","chromEnd"), remove = T, extra = "merge") %>% 
+  add_column("name" = "3F", "score" = 0) %>%  
+  mutate(strand = str_extract(chromEnd, "\\+|\\-")) %>% 
+  mutate(chromEnd = str_remove(chromEnd, "\\(\\+\\)|\\(\\-\\)")) %>% 
+  unique()
+  
+
+
+# Now we write the bed files and use bedtools getfasta to extract them
+write_tsv(bed_0F, 
+          "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/hgt_candidates_alignments/0F_prok_hits.bed", 
+          col_names = F)
+write_tsv(bed_1F, 
+          "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/hgt_candidates_alignments/1F_prok_hits.bed", 
+          col_names = F)
+write_tsv(bed_2F, 
+          "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/hgt_candidates_alignments/2F_prok_hits.bed", 
+          col_names = F)
+write_tsv(bed_3F, 
+          "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/hgt_candidates_alignments/3F_prok_hits.bed", 
+          col_names = F)
+
+# Next we use bedtools getfasta to extract the sequences from each genome
+# We use the following to do that: 
+# $ bedtools getfasta -fi <input FASTA> -bed <BED> -name -s
+
+# bedtools getfasta -fi /Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/psam_bac_genomes/000000F.quiver_pilon.n_f.fasta -bed 0F_prok_hits.bed -fo 0F_prok_hits.fa -s
+# bedtools getfasta -fi /Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/psam_bac_genomes/000001F.quiver_pilon.n_f.fasta -bed 1F_prok_hits.bed -fo 1F_prok_hits.fa -s
+# bedtools getfasta -fi /Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/psam_bac_genomes/000002F.quiver_pilon.n_f.fasta -bed 2F_prok_hits.bed -fo 2F_prok_hits.fa -s
+# bedtools getfasta -fi /Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/psam_bac_genomes/000003F.quiver_pilon.n_f.fasta -bed 3F_prok_hits.bed -fo 3F_prok_hits.fa -s
+
+# read in fasta output files, we use seqinr::rad.fasta becasue we can choose to keep the DNA as a string, rather than individual characters. 
+# We wrap read.fasta into as.data.frame(do.call(rbind, read.fasta())) so that it reads in the fasta as the seqfastadna list and converts it into a dataframe by binding its rows.
+prok_hits_seqs_0F <- 
+  as.data.frame(do.call(rbind, (read.fasta(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/hgt_candidates_alignments/0F_prok_hits.fa",
+           seqtype = "DNA", as.string = TRUE, whole.header = T)))) %>% 
+  rownames_to_column(var = "header")
+
+prok_hits_seqs_1F <- 
+  as.data.frame(do.call(rbind, (read.fasta(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/hgt_candidates_alignments/1F_prok_hits.fa",
+           seqtype = "DNA", as.string = TRUE, whole.header = T)))) %>% 
+  rownames_to_column(var = "header")
+
+prok_hits_seqs_2F <- 
+  as.data.frame(do.call(rbind, (read.fasta(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/hgt_candidates_alignments/2F_prok_hits.fa",
+           seqtype = "DNA", as.string = TRUE, whole.header = T)))) %>% 
+  rownames_to_column(var = "header")
+
+prok_hits_seqs_3F <- 
+  as.data.frame(do.call(rbind, (read.fasta(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/hgt_candidates_alignments/3F_prok_hits.fa",
+           seqtype = "DNA", as.string = TRUE, whole.header = T)))) %>% 
+  rownames_to_column(var = "header")
+
+sseqid_0_3F <-
+  rbind(prok_hits_seqs_0F, prok_hits_seqs_1F, prok_hits_seqs_2F, prok_hits_seqs_3F) %>% 
+  left_join(file3_uniprot_prok_hits_0Fthru3F, ., by = 'header') %>% 
+  dplyr::rename(sseqid_seq = V1)
+
+# Join and drop duplicates between ncbi hits and hits to our bacterial genomes
+sseqid_sequences <-
+  full_join(sseqid_0_3F, ORF_clstrs, by = c('qseqid', 'header', 'sseqid_seq'))
+
+# read in our ORFs for filtering
+ORF_seqs <-
+  as.data.frame(do.call(rbind, (read.fasta(
+    file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/psam_genome/orfipy_psamm_complement_intergenic.fa_out/psamm_complement_ORFs_orfipy.fa", 
+    seqtype = "DNA", as.string = TRUE, whole.header = T)))) %>% 
+  rownames_to_column(var = "header") %>% 
+  separate(header, into = c("qseqid", "coords_strand", "type", "length", "frame", "start", "stop"), sep = " ") %>%
+  separate(qseqid, sep = ":", into = c("chrm", "length_orf"), remove = F) %>% # split and clean qseqid
+  separate(length_orf, sep = "_", into = c("length_orf", "orf_id"), remove = T) %>% # split ORF names 2
+  mutate(length_orf = str_replace_all(string = length_orf, pattern = "[/(/)$]", replacement = "")) %>% # remove () from orf length
+  mutate(chrm = str_replace_all(string = chrm, pattern = "_quiver_pilon$", replacement = "")) %>% # remove quiver pilon from chrm
+  mutate(strand = str_extract_all(coords_strand, "\\(\\+\\)|\\(\\-\\)")) %>%
+  mutate(strand = str_replace_all(string = strand, pattern = "^\\(|\\)$", replacement = "")) %>% # split coords_strand
+  mutate(coords_strand = str_replace_all(string = coords_strand, pattern = "^\\[|\\]|\\(|\\+\\)$|\\-\\)$", replacement = "")) %>% # split coords_strand
+  dplyr::rename(coords = coords_strand) %>% 
+  # left_join(uniprot2ncbi_ids_all_hits, ., by = "qseqid") %>% 
+  rename(qseqid_seq = V1)
+
+#
+qseqid_and_sseqid_sequences <-
+  left_join(sseqid_sequences, ORF_seqs, by = 'qseqid') %>% 
+  dplyr::select(qseqid, header, qseqid_seq, sseqid_seq) %>% 
+  filter(!is.na(sseqid_seq))
+
+
+
+# now we need to write the individual fasta files for each ORF and its respective hit sequences to their respective folders.
+
+for (n in 1:length(unique(qseqid_and_sseqid_sequences$qseqid))){
+  print(n)
+  
+  df_qseq <-
+    reshape2::melt(qseqid_and_sseqid_sequences, id = c("qseqid", "header")) %>% 
+    dplyr::filter(qseqid == unique(qseqid_and_sseqid_sequences$qseqid)[n], variable == "qseqid_seq") %>% 
+    dplyr::select(header, value) %>% 
+    mutate(header = paste(">", header, sep = ""))
+
+  df_sseq <-
+    reshape2::melt(qseqid_and_sseqid_sequences, id = c("qseqid", "header")) %>% 
+    dplyr::filter(qseqid == unique(qseqid_and_sseqid_sequences$qseqid)[n], variable == "sseqid_seq") %>% 
+    dplyr::select(qseqid, value) %>% 
+    dplyr::rename(header = qseqid) %>% 
+    mutate(header = paste(">", header, sep = ""))
+
+  df_combined <- rbind(df_qseq,df_sseq)
+  
+write.table(df_combined,
+  sep = "\n",
+  file = paste("/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/hgt_candidates_alignments/alignments/",str_replace(str_remove(unique(qseqid_and_sseqid_sequences$qseqid)[n], "\\(\\)"), "\\:", "_"),"_qseq_sseq.fa", sep = ""),
+  quote = FALSE, row.names = FALSE, col.names = FALSE)
+}
+
+# Run our alignment loop in the terminal:
+#  for i in *.fa; do muscle -align $i -output $i.afa; done
+
+```
+
+# HGT index of genic orthogroups (**h**<sub>orth</sub>)
+
+First, Wade Roberts obtained proteomes for Psammoneis and 18 other taxa:\
+Psammoneis japonica\
+Pseudo-nitzschia multiseries\
+Pseudo-nitzschia multistriata\
+Fragilariopsis cylindrus\
+Seminavis robusta\
+Fistulifera solaris\
+Phaeodactylum tricornutum\
+Nitzschia sp_Nitz4\
+Cyclotella cryptica\
+Cyclotella nana\
+Nannochloropsis gaditana and Ectocarpus siliculosus as outgroups
+
+Wade Roberts then ran Orthofinder on these proteomes using default settings to produce orthologs.
+
+Then, I sorted files to include only lines for orthologs with 'Psammoneis' genes present.
+
+    grep 'Psammoneis' Orthogroups/Orthogroups.tsv > Orthogroups/Orthogroups_Psam_filtered.tsv
+
+Then I copy the .fa files for those orthogroups to their own folder.
+
+    mkdir Orthogroup_Sequences_Psammoneis
+    cd Orthogroup_Sequences
+    cp $(ls | grep "$(awk '{ print $1 }' ../Orthogroups/Orthogroups_Psam_filtered.tsv)" - ) ../Orthogroup_Sequences_Psammoneis/
+
+To perform the HGT index blasts, I used Diamond blastp in a for loop over each orthogroup .fa file. This portion of the analysis was performed on the AHPCC computing cluster using the slurm file 'submit_diamond_HGT_index_768gb.slurm '.\
+Our reference databases are the same as those used in the intergenic HGT index above.
+
+We extract and translate the CDS sequences for our bacterial genomes in the same method as in our intergenic HGT analysis.
+
+    Rscript gff_filter_rename_bac.R
+
+    bedtools getfasta -fi 000000F.quiver_pilon.n_f.fasta -bed 0F.gff -fo 000000F.fa -s
+    bedtools getfasta -fi 000001F.quiver_pilon.n_f.fasta -bed 1F.gff -fo 000001F.fa -s
+    bedtools getfasta -fi 000002F.quiver_pilon.n_f.fasta -bed 2F.gff -fo 000002F.fa -s
+    bedtools getfasta -fi 000003F.quiver_pilon.n_f.fasta -bed 3F.gff -fo 000003F.fa -s
+
+    echo 'translate bacterial genome sequences'
+    Rscript translate_cds.R
+
+We construct our diamond blast databases in the same manner as in our intergenic HGT analysis.
+
+    ## Here we construct our Diamond blast database
+    # append our CDS AA sequences to our .fna file for blast input
+    echo 'append our CDS AA sequences to our .faa file for blast input'
+    cat 00000*F_gff.faa >> uniprot_reviewed_Arc_2157_Bac_2.fasta
+
+
+    echo 'rm initial bacterial genome files'
+    rm 00000*F.fa
+    rm psam.final_assembly.Quiver_Pilon_Reapr_GapCloser.fa
+
+    # make diamond db
+    echo 'Make Diamond DB using NR + 0-3F bacterial genomes'
+    diamond makedb --in uniprot_reviewed_Arc_2157_Bac_2.fasta -d uniprot_prok
+    diamond makedb --in uniprot-reviewed_yes+taxonomy_2759_eukaryota.fasta -d uniprot_euk
+
+    mkdir HGT_index_output_donor/
+    mkdir HGT_index_output_recipient/
+    mkdir HGT_index_output/
+
+Now we use the bash loop file to perform our blast searches. This script runs two loops, one loop searches each orthogroup against the donor (Archaea & Bacteria) diamond blast database and the other loop searches against the recipient (Eukaryote) blast database. At the end of each loop, the respective output .tsv files are moved into their respective output directories.
+
+    # Start our Diamond blast bash loop
+    echo 'Start the diamond blast for loop.'
+    ./diamond_blast_orthogroups_768gb.sh
+
+Finally, we enter the directory for both donor and recipient output files and append a file name column to each output file. This column contains the name of the input file so that we can keep track of the output from each orthogroup. We then add column names as the first line of every output file.
+
+    cd HGT_index_output_donor/
+    for f in *.tsv; do sed -i "s/$/\t$f/" $f; done
+    for f in *.tsv; do sed -i '1 s/^/qseqid\tsseqid_d\tpident_d\tlength_d\tmismatch_d\tgapopen_d\tqstart_d\tqend_d\tsstart_d\tsend_d\tevalue_d\tbitscore_d\torthogroup\n/' $f; done
+
+    cd ../HGT_index_output_recipient/
+    for f in *.tsv; do sed -i "s/$/\t$f/" $f; done
+    for f in *.tsv; do sed -i '1 s/^/qseqid\tsseqid_r\tpident_r\tlength_r\tmismatch_r\tgapopen_r\tqstart_r\tqend_r\tsstart_r\tsend_r\tevalue_r\tbitscore_r\torthogroup\n/' $f; done
+
+## *h*<sub>orth</sub> calculation
+
+```{r}
+#| label: Crsip HGT index classification
+
+# HGT index
+
+# calculating hgt index (h)
+# From Boschettis et al. 2012:
+#   The HGT index (h) is calculated as the difference between the highest non-metazoan [donor] and the highest metazoan [recipient] bitscore.
+
+# To calculate HGT classes A, B, & C. (C,(B,(A))), as per Crisp et al. 2015.
+# Class C: h >= 30 & best donor bitscore >= 100
+# Class B: For each class C gene, the average h value of the members of its ortholog group was determined (h orth);
+#          if this was ≥30 the gene was considered to be a class B gene.
+# Class A: Class A genes were defined as a subset of class B genes with no recipient matches with bitscore ≥100 and
+#          no members of their respective ortholog group with recipient matches with bitscore ≥100.
+
+# read in UniProt information for each sseqid in our blast databases
+uniprot_reviewed <-
+  read_tsv(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/uniprot-reviewed_yes.tsv", col_names = T) %>%
+  as.data.frame() %>%
+  clean_names()
+
+# assign the output directories as variables
+donor_directory <-
+  "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/HGT_index_output/HGT_index_output_donor/"
+recipient_directory <-
+  "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/HGT_index_output/HGT_index_output_recipient/"
+
+# list the files in each directory as a variable
+donors <-
+  list.files(path = donor_directory, full.names = T)
+recipients <-
+  list.files(path = recipient_directory, full.names = T)
+
+# Here we use fread, lapply, and bind_rows to read in all of our output files and bind them by row (i.e., concatenating them) into a single dataframe for donor and recipient results, respectively.
+donor_files <-
+  bind_rows(lapply(donors, fread)) %>%
+  group_by(qseqid) %>% # group our data by sqeqid
+  top_n(1, bitscore_d) %>% # select the top blast search result by bitscore for each seq_id
+  slice(1) %>%
+  mutate(orthogroup = str_remove(orthogroup, ".fa.donor.dmndBlastOut.tsv")) %>% 
+  ungroup()
+
+recipient_files <-
+  bind_rows(lapply(recipients, fread)) %>%
+  group_by(qseqid) %>% # group our data by sqeqid
+  top_n(1, bitscore_r) %>% # select the top blast search result by bitscore for each seq_id
+  slice(1) %>%
+  mutate(orthogroup = str_remove(orthogroup, ".fa.recipient.dmndBlastOut.tsv")) %>% 
+  ungroup()
+
+# calculate HGT index per orthogroup (h orth)
+# This needs to be done first because R gets grumpy with you when trying this and everything else in a single, piped command.
+d_r_hOrth <-
+  full_join(donor_files, recipient_files, by = c("qseqid", "orthogroup")) %>% # join donor and recipient output by qseqid and orthogroup columns
+  mutate(h = bitscore_d - bitscore_r) %>% # calculate HGT index (h)
+  group_by(orthogroup) %>% # necessary to calculate h_orth
+  dplyr::summarise(dplyr::across(dplyr::starts_with("h"),
+    ~ mean(.x, na.rm = TRUE),
+    .names = "{.col}_orth"
+  )) %>% # Calculate h_orth for each orthogroup (mean h per orthogroup)
+  naniar::replace_with_na(., replace = list(h_orth = "NaN")) # here we replace all NaN values introduced by h_orth calculation with actual NA values.
+
+# Here we perform our final joins and calculate and assign the crisp GT index classes.
+hgt_index_output <-
+  full_join(donor_files, recipient_files, by = c("qseqid", "orthogroup")) %>%
+  replace_na(list(
+    bitscore_d = 0,
+    bitscore_r = 0
+  )) %>% # here we replace all null values in recipient and donor bitscores with zeros. This is necessary to assign our 'strong' domain classes.
+  mutate(h = bitscore_d - bitscore_r) %>% # calculate HGT index (h)
+  full_join(., d_r_hOrth, by = "orthogroup") %>%
+  mutate(
+    domain_assignment = # create domain assignment column
+      case_when(
+        # strong prokaryote
+        bitscore_r == 0 & h >= 30 ~ "prokaryote_strong",
+        # strong eukaryote
+        bitscore_d == 0 & h <= 0 ~ "eukaryote_strong",
+        # prokaryote
+        h >= 30 ~ "prokaryote",
+        # eukaryote
+        h <= 0 ~ "eukaryote",
+        # indeterminate
+        between(h, 0, 30) ~ "indeterminate"
+      )
+  )
+
+hgt_index_output_orth <-
+  left_join(hgt_index_output,
+    (hgt_index_output %>%
+      group_by(orthogroup) %>%
+      summarise(max_bitscore_r_orth = max(bitscore_r, na.rm = TRUE))),
+    by = "orthogroup"
+  ) %>% # here we join a summary df of the max value in bitscroe_r for each orthogroup to the main dataframe, this allows for calculation of class A hgt classes
+  mutate(
+    hgt_class = # create our hgt class column, we need to assign classes from least to most inclusive because case_when will overwrite previous assignments that meet the criteria of the next class.
+      case_when(
+        # Class A: Class A genes were defined as a subset of class B genes with no recipient matches with bitscore ≥100 and
+        #          no members of their respective ortholog group with recipient matches with bitscore ≥100.
+        h_orth >= 30 & bitscore_r < 100 & max_bitscore_r_orth < 100 & (domain_assignment == "prokaryote" |domain_assignment == "prokaryote_strong") ~ "A",
+        # Class B: For each class C gene, the average h value of the members of its ortholog group was determined (h orth);
+        #          if this was ≥30 the gene was considered to be a class B gene.
+        h_orth >= 30 & (domain_assignment == "prokaryote" |domain_assignment == "prokaryote_strong")  ~ "B",
+        # Class C: h >= 30 & best donor bitscore >= 100
+        h >= 30 & bitscore_d >= 100 & (domain_assignment == "prokaryote" |domain_assignment == "prokaryote_strong")  ~ "C"
+      )
+  ) %>%
+  separate(sseqid_r, sep = "\\|", into = c("uniprot_prefix_r", "uniprot_id_r", "product_r"), remove = T) %>% # sseqid_r split
+  separate(sseqid_d, sep = "\\|", into = c("uniprot_prefix_d", "uniprot_id_d", "product_d"), remove = T) %>% # uniprot hits
+  left_join(., uniprot_reviewed, by = c("uniprot_id_r" = "entry")) %>% # Join Uniprot info to recipient hits
+  select(-c(starts_with("uniprot_prefix"))) %>%
+    dplyr::rename(
+    entry_name_uniprot_r = entry_name, gene_ontology_biological_process_uniprot_r = gene_ontology_biological_process, gene_ontology_molecular_function_uniprot_r = gene_ontology_molecular_function, gene_names_uniprot_r = gene_names,
+    organism_uniprot_r = organism, taxonomic_lineage_superkingdom_r = taxonomic_lineage_superkingdom
+  ) %>%
+  left_join(., uniprot_reviewed, by = c("uniprot_id_d" = "entry")) %>% # Join Uniprot info to donor hits
+  dplyr::rename(
+    entry_name_uniprot_d = entry_name, gene_ontology_biological_process_uniprot_d = gene_ontology_biological_process, gene_ontology_molecular_function_uniprot_d = gene_ontology_molecular_function, gene_names_uniprot_d = gene_names,
+    organism_uniprot_d = organism, taxonomic_lineage_superkingdom_d = taxonomic_lineage_superkingdom
+  )
+
+
+
+# prokaryotic subset of hits
+hgt_index_output_orth_prok_psam <-
+  hgt_index_output_orth %>%
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+  filter(grepl("^Psammoneisjap", qseqid))
+
+hgt_index_output_orth_prok_psam_classed <-
+  hgt_index_output_orth %>%
+  filter(!is.na(hgt_class)) %>%
+  filter(grepl("^Psammoneisjap", qseqid))
+
+hgt_index_output_orth_euk_psam <-
+  hgt_index_output_orth %>%
+  filter(domain_assignment == "eukaryote_strong" | domain_assignment == "eukaryote") %>%
+  filter(grepl("^Psammoneisjap", qseqid))
+
+hgt_index_output_orth_ind_psam <-
+  hgt_index_output_orth %>%
+  filter(domain_assignment == "indeterminate") %>%
+  filter(grepl("^Psammoneisjap", qseqid))
+
+# Psammoneis subset of hits
+ hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>% 
+  select(domain_assignment) %>%
+    table(useNA = "ifany")
+
+ # Psammoneis subset of hits, subset to prokaryotic hits and tabled in different ways
+    hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>% 
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+  select(taxonomic_lineage_superkingdom_d) %>%
+    table(useNA = "ifany")
+ 
+   hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>% 
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+  select(hgt_class) %>%
+    table(useNA = "ifany")
+  
+  hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>% 
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+    filter(taxonomic_lineage_superkingdom_d == "Archaea") %>% 
+  select(hgt_class) %>%
+    table(useNA = "ifany")
+  
+    hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>% 
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+    filter(taxonomic_lineage_superkingdom_d == "Bacteria") %>% 
+  select(hgt_class) %>%
+    table(useNA = "ifany")
+
+hgt_index_output_orth_prok_psam %>%
+  ungroup() %>% 
+  select(gene_names_uniprot_d) %>% 
+  unique()
+
+ hgt_index_output_orth_prok_psam %>%
+   filter(grepl("^Psammoneisjap", qseqid)) %>% 
+  group_by(domain_assignment) %>%
+  summarise(cnt = dplyr::n()) %>%
+  mutate(freq = round(cnt / sum(cnt), 3)) %>%
+  dplyr::arrange(desc(freq))
+
+ hgt_index_output_orth %>%
+  group_by(domain_assignment) %>%
+  summarise(cnt = dplyr::n()) %>%
+  mutate(freq = round(cnt / sum(cnt), 3)) %>%
+  dplyr::arrange(desc(freq))
+
+hgt_index_output_orth %>%
+  group_by(hgt_class) %>%
+  summarise(cnt = dplyr::n()) %>%
+  mutate(freq = round(cnt / sum(cnt), 3)) %>%
+  dplyr::arrange(desc(freq))
+
+hgt_index_output_orth %>%
+  select(qseqid, bitscore_d, bitscore_r, h, h_orth, domain_assignment, hgt_class, max_bitscore_r_orth) %>% 
+  filter(!is.na(hgt_class)) %>% 
+    group_by(domain_assignment) %>%
+  summarise(cnt = dplyr::n()) %>%
+  mutate(freq = round(cnt / sum(cnt), 3)) %>%
+  dplyr::arrange(desc(freq))
+
+hgt_index_output_orth %>%
+  select(qseqid, bitscore_d, bitscore_r, h, h_orth, domain_assignment, hgt_class, max_bitscore_r_orth) %>% 
+  filter(!is.na(hgt_class)) %>% 
+  summary()
+
+rm(uniprot_reviewed, d_r_hOrth, donor_files, recipient_files, recipients, donors, donor_directory, recipient_directory)
+```
+
+------------------------------------------------------------------------
+
+# bacterial genes of interest and function
+
+For this analysis, we will use the program [METABOLIC](https://github.com/AnantharamanLab/METABOLIC) to predict the metabolic and biogeochemical functional trait profiles of our genomes.
+
+We ran METABOLIC on the AHPCC computing cluster, using default settings and our bacterial genomes as input. The slurm file used for this analysis was 'submit_METABOLIC_768gb.slurm'.
+
+    perl /share/apps/python/anaconda-3.9/envs/METABOLIC_v4.0/METABOLIC/METABOLIC-G.pl -in-gn psam_bac_genomes/ -o metabolic_output/
+
+## Metabolic output exploration and visualization
+
+```{r}
+#| label: import METABOLIC output
+
+list.files("/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/03_metabolic_psam_bacteria/metabolic_output", pattern = ".tsv")
+
+metabolic_output <-
+  "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/03_metabolic_psam_bacteria/metabolic_output/"
+
+metabolic_FunctionHit <-
+  read_tsv(paste(metabolic_output,
+    "METABOLIC_result_FunctionHit.tsv",
+    sep = ""
+  ),
+  col_names = T
+  ) %>%
+  # Change present absent to 0 1
+  mutate(
+    genome_0F = case_when(
+    X000000F.quiver_pilon.n_f.Function.presence == "Present" ~ 1,
+    X000000F.quiver_pilon.n_f.Function.presence == "Absent" ~ 0),
+    genome_1F = case_when(
+    X000001F.quiver_pilon.n_f.Function.presence == "Present" ~ 1,
+    X000001F.quiver_pilon.n_f.Function.presence == "Absent" ~ 0),
+    genome_2F = case_when(
+    X000002F.quiver_pilon.n_f.Function.presence == "Present" ~ 1,
+    X000002F.quiver_pilon.n_f.Function.presence == "Absent" ~ 0),
+    genome_3F = case_when(
+    X000003F.quiver_pilon.n_f.Function.presence == "Present" ~ 1,
+    X000003F.quiver_pilon.n_f.Function.presence == "Absent" ~ 0),
+    ) %>%
+  select(-starts_with("x")) %>% 
+  mutate(sum = select(., genome_0F:genome_3F) %>% rowSums(na.rm = TRUE)) %>% # this calculates the sum of genomes which possess a metabolic category in their genome.
+  filter(!sum == 0) %>% 
+  mutate(Total = "")
+
+
+metabolic_HMMHitNum <-
+  read_tsv(paste(metabolic_output,
+    "METABOLIC_result_HMMHitNum.tsv",
+    sep = ""
+  ),
+  col_names = T
+  ) %>% 
+  # Change present absent to 0 1
+  mutate(
+    genome_0F = case_when(
+    X000000F.quiver_pilon.n_f.Hmm.presence == "Present" ~ 1,
+    X000000F.quiver_pilon.n_f.Hmm.presence == "Absent" ~ 0),
+    genome_1F = case_when(
+    X000001F.quiver_pilon.n_f.Hmm.presence == "Present" ~ 1,
+    X000001F.quiver_pilon.n_f.Hmm.presence == "Absent" ~ 0),
+    genome_2F = case_when(
+    X000002F.quiver_pilon.n_f.Hmm.presence == "Present" ~ 1,
+    X000002F.quiver_pilon.n_f.Hmm.presence == "Absent" ~ 0),
+    genome_3F = case_when(
+    X000003F.quiver_pilon.n_f.Hmm.presence == "Present" ~ 1,
+    X000003F.quiver_pilon.n_f.Hmm.presence == "Absent" ~ 0),
+    ) %>%
+  mutate(sum_genome = select(., genome_0F:genome_3F) %>% rowSums(na.rm = TRUE)) %>% # this calculates the sum of genomes which possess a metabolic category in their genome.
+  mutate(sum_Hmm = select(., ends_with("Hit.numbers")) %>% rowSums(na.rm = TRUE)) %>% # this calculates the sum of genomes which possess a metabolic category in their genome.
+  filter(!sum_genome == 0)
+```
+
+# Final Figures
+
+```{r}
+#| label: orf_size_range
+#| fig-cap: Figure 8. Density plot of length ranges in nucleotides for intergenic ORFs by HGT classification. Full ORF data for our intergenic HGT analyses can be found in SUPPLEMENTARY FILE X.
+#| eval: true
+#| echo: false
+#| warning: false
+#| error: false
+#| output: false
+
+
+### ORF size range ###
+# maybe add CDS hit ranges?
+# file3_uniprot %>% 
+#   select(length, domain_assignment) %>% 
+#   mutate(length = as.numeric(length)) %>% 
+#   ggplot(aes(y = domain_assignment, x = length, color = domain_assignment, fill = domain_assignment)) +
+#   geom_density_ridges(rel_min_height = 0.005, alpha = .75) +
+#   # geom_density_ridges(alpha=0.75) +
+#   viridis::scale_color_viridis(discrete=T) +
+#   viridis::scale_fill_viridis(discrete=T) +
+#   scale_x_continuous(limits = c(0,3500), breaks = c(seq(0, 3500, by = 500))) +
+#   xlab("ORF length (nucleotides)") +
+#   ylab("") +
+#   theme(
+#     axis.text.x = element_text(angle = 0, hjust = .5, color = "#000000"),
+#     axis.text.y = element_text(color = "#000000", size = 10),
+#     # Hide panel borders and remove grid lines
+#     panel.border = element_blank(),
+#     # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+#     panel.grid.major.y = element_blank(),
+#     panel.grid.minor = element_blank(),
+#     # Remove panel background
+#     panel.background = element_blank(),
+#     # remove unnecessary text
+#     axis.title.y = element_markdown(),
+#     axis.title.x = element_markdown(),
+#     # Change axis line
+#     axis.line = element_line(colour = "black"),
+#     # indicate position of legend
+#     legend.position = "none",
+#     legend.title = element_blank()
+#   )
+### half-eye dotplot from ggdist
+file3_uniprot %>% 
+  select(length, domain_assignment) %>% 
+  mutate(length = as.numeric(length)) %>% 
+  ggplot(aes(y = domain_assignment, x = length, fill = domain_assignment)) +
+  stat_slab(scale = 0.7, normalize = "groups") +
+  stat_dotsinterval(stroke = 1, point_color = "grey50", interval_color = "grey75", side = "bottom", scale = 0.7, slab_size = NA, layout = "swarm") +
+  # geom_density_ridges(alpha=0.75) +
+  # viridis::scale_color_viridis(discrete=T) +
+  viridis::scale_fill_viridis(discrete=T) +
+  scale_x_continuous(limits = c(0,3500), breaks = c(seq(0, 3500, by = 500))) +
+  xlab("ORF length (nucleotides)") +
+  ylab("") +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = .5, color = "#000000"),
+    axis.text.y = element_text(color = "#000000", size = 10),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "none",
+    legend.title = element_blank()
+  )
+```
+
+```{r}
+#| label: gIG_domains
+#| fig-cap: Figure 7. HGT index classifications for intergenic and genic analyses. Intergenic analyses: A) Frequencies of prokaryotic, indeterminate, and eukaryotic HGT classifications [5] and B) domain level classifications for prokaryotic HGT hits. Genic analyses: C) Frequencies of prokaryotic, indeterminate, and eukaryotic HGT classifications [5], D) domain level classifications for prokaryotic HGT hits, and E) horth classifications [7]. Full datasets for genic and intergenic HGT analyses can be found in SUPPLEMENTARY FILE X and SUPPLEMENTARY FILE X, respectively.
+#| eval: true
+#| echo: false
+#| warning: false
+#| error: false
+#| output: false
+
+
+### domain classifications for genic and intergenic datasets ###
+p1 <-  
+  file3_uniprot %>% 
+  select(domain_assignment, taxonomic_lineage_superkingdom_d) %>% 
+  ggplot(aes(y = domain_assignment, fill = domain_assignment)) +
+  geom_bar(width = .4) +
+  viridis::scale_color_viridis(discrete=T, begin = 0, end = .95, option = "D") +
+  viridis::scale_fill_viridis(name = "HGT index hit classification", discrete=T, begin = 0, end = .95, option = "D") +
+  scale_x_continuous(expand = c(0, 0), limits = c(0,1200), breaks = c(seq(0, 1200, by = 300))) +
+  xlab("") +
+  ylab("") +
+  theme(
+    axis.text.y = element_text(size = 12, color = "black"),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    # legend.position = "none",
+    # legend.title = element_blank()
+  )
+
+p2 <-
+  file3_uniprot %>% 
+  filter(domain_assignment == "prokaryote" | domain_assignment == "prokaryote_strong") %>% 
+  select(domain_assignment, taxonomic_lineage_superkingdom_d) %>% 
+  ggplot(aes(y = domain_assignment, fill = taxonomic_lineage_superkingdom_d)) +
+  geom_bar(width = .4) +
+  scale_fill_manual(name = "Domain of Prokaryote HGT hits", values = c("gray","#696969")) +
+  scale_color_manual(values = c("gray","#696969")) +
+  scale_x_continuous(expand = c(0, 0), limits = c(0,200), breaks = c(seq(0, 200, by = 50))) +
+  xlab("") +
+  ylab("") +
+  theme(
+    axis.text.y = element_text(size = 10, color = "black"),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    # legend.position = "none",
+    # legend.title = element_blank()
+  )
+
+p3 <-  
+  hgt_index_output_orth %>% 
+  ungroup() %>% 
+  filter(grepl("^Psammoneisjap", qseqid)) %>% 
+  select(domain_assignment, taxonomic_lineage_superkingdom_d) %>% 
+  ggplot(aes(y = domain_assignment, fill = domain_assignment)) +
+  geom_bar(width = .4) +
+  viridis::scale_color_viridis(discrete=T, begin = 0, end = .95, option = "D") +
+  viridis::scale_fill_viridis(name = "HGT index hit classification", discrete=T, begin = 0, end = .95, option = "D") +
+  scale_x_continuous(expand = c(0, 0)) +
+  xlab("Frequency") +
+  ylab("") +
+  # guides(fill = guide_legend(title = "HGT index hit classification")) +
+  theme(
+    axis.text.y = element_text(size = 12, color = "black"),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    # legend.position = "none",
+    # legend.title = element_markdown()
+  )
+
+p4 <-
+  hgt_index_output_orth %>% 
+  ungroup() %>% 
+  filter(grepl("^Psammoneisjap", qseqid)) %>% 
+  filter(domain_assignment == "prokaryote" | domain_assignment == "prokaryote_strong") %>% 
+  select(domain_assignment, taxonomic_lineage_superkingdom_d) %>% 
+  ggplot(aes(y = domain_assignment, fill = taxonomic_lineage_superkingdom_d)) +
+  geom_bar(width = .4) +
+  scale_fill_manual(name = "Domain of Prokaryote HGT hits", values = c("gray","#696969")) +
+  scale_color_manual(values = c("gray","#696969")) +
+  scale_x_continuous(expand = c(0, 0)) +
+  xlab("") +
+  ylab("") +
+  theme(
+    axis.text.y = element_text(size = 10, color = "black"),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    # legend.position = "none",
+    # legend.title = element_blank()
+  )
+
+p5 <-
+  hgt_index_output_orth %>% 
+  ungroup() %>% 
+  filter(grepl("^Psammoneisjap", qseqid)) %>% 
+  filter(domain_assignment == "prokaryote" | domain_assignment == "prokaryote_strong") %>% 
+  select(hgt_class, taxonomic_lineage_superkingdom_d) %>% 
+  ggplot(aes(y = hgt_class, fill = taxonomic_lineage_superkingdom_d)) +
+  geom_bar(width = .4) +
+  scale_fill_manual(name = "Domain of Prokaryote HGT hits", values = c("gray","#696969")) +
+  scale_color_manual(values = c("gray","#696969")) +
+  scale_x_continuous(expand = c(0, 0)) +
+  xlab("") +
+  ylab("") +
+  # guides(fill = guide_legend(title = "Domain of Prokaryote HGT hits")) +
+  theme(
+    axis.text.y = element_text(size = 10, color = "black"),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    # legend.position = "none",
+    # legend.title = element_markdown()
+    )
+  
+
+(p1 + inset_element(p2, left = 0.4, bottom = 0.4, right = 1, top = 1, align_to = 'full')) / 
+  (p3 + inset_element(p4, left = 0.3, bottom = 0.6, right = .6, top = 1, align_to = 'full') + inset_element(p5, left = 0.6, bottom = 0.6, right = 1, top = 1, align_to = 'full') ) +
+  plot_annotation(tag_levels = 'A') +
+  plot_layout(guides = "collect") &
+  theme(
+    legend.position = "bottom", 
+    # legend.key.size = unit(0.2, "cm"), 
+    legend.title = element_text(size = 11, face = "bold"),
+    legend.text = element_text(size = 10)
+    )
+```
+
+```{r}
+#| label: hgt_domains_gIG
+#| fig-cap: Figure 6. Ridgeline density plots of h values for genic and intergenic datasets. Colors indicate the respective domain classification for each Diamond BLASTP hit. Vertical gray lines indicate the cutoff h value for determining domain (h = 30). For clarity, plots have been subset to only include values of -200 ≤ h ≤ 200. Full dataset for genic and intergenic HGT analyses can be found in SUPPLEMENTARY FILE X and SUPPLEMENTARY FILE X, respectively.
+#| eval: true
+#| echo: false
+#| warning: false
+#| error: false
+#| output: false
+
+
+
+### HGT values by domain assignment, faceted by genic/intergenic ###
+hgt_index_output_orth %>% 
+  ungroup() %>% 
+  filter(grepl("^Psammoneisjap", qseqid)) %>% 
+  select(domain_assignment, h) %>% 
+  add_column(g_ig = "genic") %>% 
+  rbind(.,
+        (file3_uniprot %>% 
+          ungroup() %>% 
+          select(domain_assignment, h) %>% 
+           add_column(g_ig = "intergenic"))) %>% 
+  # pivot_longer() +
+  ggplot(aes(y = domain_assignment, x = h, color = domain_assignment, fill = domain_assignment)) +
+  geom_density_ridges(rel_min_height = 0.005, scale = 2, alpha = 0.7) +
+  viridis::scale_color_viridis(discrete=T) +
+  viridis::scale_fill_viridis(discrete=T) +
+  scale_x_continuous(limits = c(-200,200), breaks = c(0,seq(-200, 200, by = 40))) +
+  xlab("HGT index (<i>h</i>)") +
+  ylab("") +
+  facet_wrap(g_ig~., scales = "free_x")  + # create faceted plots for the g_ig variable
+  geom_vline(xintercept = 30, color = "grey", type = 3) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "right",
+    legend.title = element_blank()
+  )
+```
+
+```{r}
+#| label: blast_hit_gene_annotations
+#| fig-cap: Figure 5. Molecular function and gene annotations of genic and intergenic HGT hits, respectively. Genic hits were subset to only include metabolic functions with ≥ 5 occurrences. Colors indicate the source for the sseqid hit (e.g., yellow for UniProt sequences and all others for individual bacterial genomes). Intergenic hits were subset to only include annotations with > 0 occurrences. Full metabolic annotations for genic and intergenic HGT analyses can be found in SUPPLEMENTARY FILE X and SUPPLEMENTARY FILE X, respectively.
+#| eval: true
+#| echo: false
+#| warning: false
+#| error: false
+#| output: false
+
+
+### Genic and intergenic metabolic characteristics of potential HGT hits, faceted by genic/intergenic ###
+file3_uniprot_prok_hits_eco %>% 
+  select(bac_gen_gene_annotation, chrm_bac) %>% 
+  # table(useNA="always") %>% # coerce annotations and annotation origins into a tidy count table, while keeping NA's
+  table() %>% # coerce annotations and annotation origins into a tidy count table, while keeping NA's
+  as.data.frame() %>% 
+  dplyr::rename(annotation = bac_gen_gene_annotation, label = chrm_bac) %>% 
+  filter(!Freq == 0) %>% 
+    
+  # rbind our uniprot only hits  
+  rbind(., 
+        (file3_uniprot_prok_hits_eco %>% 
+          select(gene_ontology_molecular_function_uniprot_d) %>%
+           mutate(gene_ontology_molecular_function_uniprot_d = str_remove_all(gene_ontology_molecular_function_uniprot_d, " \\[GO\\:[:digit:]+\\]")) %>% 
+           table(useNA = "ifany") %>% 
+           as.data.frame() %>% 
+           # mutate(Var1 = substr(Var1, 1, regexpr(";", Var1, fixed=TRUE)-1)) %>% 
+           mutate(annotation = stringi::stri_extract_first_regex(gene_ontology_molecular_function_uniprot_d, "^[^;]+")) %>% 
+           add_column(label = "uniprot") %>% 
+           select(annotation, label, Freq)
+         )) %>% 
+  mutate(annotation = forcats::fct_relevel(annotation, sort)) %>% 
+  filter(!Freq == 0) %>% 
+  add_column(g_ig = "intergenic") %>% 
+  
+    # rbind our Genic hits 
+  rbind(.,
+        (hgt_index_output_orth %>% 
+          ungroup() %>% 
+          filter(grepl("^Psammoneisjap", qseqid)) %>% 
+          filter(domain_assignment == "prokaryote"|domain_assignment == "prokaryote_strong") %>% 
+          select(gene_ontology_molecular_function_uniprot_d) %>% 
+          mutate(gene_ontology_molecular_function_uniprot_d = stringi::stri_extract_first_regex(gene_ontology_molecular_function_uniprot_d, "^[^;]+")) %>% 
+          table(useNA = "ifany") %>% 
+          as.data.frame() %>% 
+          rename(Var1 = gene_ontology_molecular_function_uniprot_d) %>% 
+          mutate(Var1 = str_remove_all(Var1, " \\[GO\\:[:digit:]+\\]")) %>% 
+                   # mutate(Var1 = substr(Var1, 1, regexpr(";", Var1, fixed=TRUE)-1)) %>% 
+          dplyr::rename(annotation = Var1) %>% 
+          mutate(annotation = forcats::fct_relevel(annotation, sort)) %>% 
+          filter(Freq >= 5) %>% 
+           add_column(label = "uniprot") %>% 
+          add_column(g_ig = "genic"))) %>% 
+  group_by(annotation, label, g_ig) %>% 
+  summarise_each(funs(sum)) %>% 
+  ungroup() %>% 
+  
+  ## Plot it!
+  ggplot(aes(y = forcats::fct_rev(annotation), x = Freq, color = label, fill = label)) +
+  geom_bar(stat = "identity", width = .6) +
+  viridis::scale_color_viridis(discrete=T, begin = 0, end = .95, option = "D") +
+  viridis::scale_fill_viridis(discrete=T, begin = 0, end = .95, option = "D", na.value="black") +
+  # scale_x_continuous(expand = c(0, 0), limits = c(0,190), breaks = c(190, seq(0, 18, by = 2))) +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_wrap(g_ig~., scales = "free_x")  + # create faceted plots for the g_ig variable
+  xlab("Frequency") +
+  ylab("") +
+  theme(
+    axis.text.y = element_text(size = 7.5, color = "black"),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(color = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "right",
+    legend.title = element_blank()
+  )
+```
+
+```{r}
+#| label: metabolic_plot
+#| fig-cap: Figure 9. METABOLIC category (A-C) and function (D-F) output plots for bacterial genomes. A) Absence / Presence of genes in different metabolic categories for each bacterial genome, B) total number of genomes which possess a gene in a metabolic category, and C) total number of genes in each metabolic category for all genomes. D) Absence / Presence of genes in different metabolic functions for each bacterial genome, E) total number of genomes which possess a gene for a metabolic function, and F) total number of genes in each metabolic function for all genomes. Full output data and figures from METABOLIC analysis can be found in SUPPLEMENTARY FILE X and SUPPLEMENTARY FIGURE X, respectively.
+#| eval: true
+#| echo: false
+#| warning: false
+#| error: false
+#| output: false
+
+### METABOLIC Category plots ###
+# heat plot of number of genome hits per category
+p6 <-
+  metabolic_FunctionHit %>%
+  filter(!sum == 0) %>%
+  melt() %>%
+  mutate(Category = replace(Category, Category == "Oxygen metabolism (Oxidative phosphorylation Complex IV)", "Oxygen metabolism")) %>%
+  filter(!variable == "sum") %>%
+    mutate(across(where(is.numeric),
+                factor)) %>% 
+  mutate(variable = str_remove(variable, "genome_")) %>% 
+  ggplot(aes(variable, fct_rev(Category), fill = value)) +
+  geom_tile(aes(fill = value)) +
+  scale_fill_manual(name = "Absence / Presence", breaks = c(0,1), values = c("gray","black")) +
+  # xlab("Bacterial genomes") +
+  ylab("Metabolic category") +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = .5, color = "#000000", size = 12),
+    axis.text.y = element_text(color = "#000000", size = 12),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_blank(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "bottom",
+    legend.title = element_text()
+  )
+
+# Tile plot depicting the number of genomes that possess a gene within that category
+p7 <-
+  metabolic_FunctionHit %>%
+  filter(!sum == 0) %>%
+      mutate(across(where(is.numeric),
+                factor)) %>% 
+  ggplot(aes(Total, fct_rev(Category), fill = sum)) +
+  geom_tile() +
+  scale_fill_manual(name = "Total presence in genomes", 
+                    breaks = c(1,2,3,4), 
+                    values = c("#440154FF","#31688EFF","#35B779FF","#FDE725FF")) +
+  # xlab("Bacterial genomes") +
+  ylab("") +
+  xlab("") +
+  theme(
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks = element_blank(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "bottom",
+    legend.title = element_text()
+  )
+
+
+# Bar plot depicting the number of genes within that category
+p8 <-
+  metabolic_FunctionHit %>%
+  filter(!sum == 0) %>%
+  select(Category) %>%
+  table() %>%
+  as.data.frame() %>% 
+  ggplot(aes(y = fct_rev(Category), x = Freq)) +
+  geom_bar(stat = "identity") +
+  viridis::scale_fill_viridis(breaks = c(0, 1)) +
+  # scale_x_continuous(breaks = c(seq(0, 28, 4))) +
+  xlab("No. of genes") +
+  ylab("Metabolic category") +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5, color = "#000000"),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "none",
+    legend.title = element_blank()
+  )
+
+
+############
+### METABOLIC Function plots ###
+# heat plot of number of genome hits per feature
+p9 <-
+  metabolic_FunctionHit %>%
+  filter(!sum == 0) %>%
+  melt() %>%
+  mutate(Category = replace(Category, Category == "Oxygen metabolism (Oxidative phosphorylation Complex IV)", "Oxygen metabolism")) %>%
+  filter(!variable == "sum") %>%
+    mutate(across(where(is.numeric),
+                factor)) %>% 
+  mutate(variable = str_remove(variable, "genome_")) %>% 
+  ggplot(aes(variable, fct_rev(Function), fill = value)) +
+  geom_tile(aes(fill = value)) +
+  scale_fill_manual(name = "Absence / Presence", breaks = c(0,1), values = c("gray","black")) +
+  # xlab("Bacterial genomes") +
+  ylab("Metabolic function") +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = .5, color = "#000000", size = 12),
+    axis.text.y = element_text(color = "#000000", size = 10),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_blank(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "bottom",
+    legend.title = element_text()
+  )
+
+# Tile plot depicting the number of genomes that possess a gene within that category
+p10 <-
+  metabolic_FunctionHit %>%
+  filter(!sum == 0) %>%
+      mutate(across(where(is.numeric),
+                factor)) %>% 
+  ggplot(aes(Total, fct_rev(Function), fill = sum)) +
+  geom_tile() +
+  scale_fill_manual(name = "Total presence in genomes", 
+                    breaks = c(1,2,3,4), 
+                    values = c("#440154FF","#31688EFF","#35B779FF","#FDE725FF")) +
+  # xlab("Bacterial genomes") +
+  ylab("") +
+  xlab("") +
+  theme(
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks = element_blank(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "bottom",
+    legend.title = element_text()
+  )
+
+
+# Bar plot depicting the number of genes within that category
+p11 <-
+  metabolic_FunctionHit %>%
+  filter(!sum == 0) %>%
+  select(-sum) %>% 
+  melt() %>% 
+  filter(!value == 0) %>% 
+  select(Function) %>%
+  table() %>%
+  as.data.frame() %>% 
+  ggplot(aes(y = fct_rev(Function), x = Freq)) +
+  geom_bar(stat = "identity") +
+  viridis::scale_fill_viridis(breaks = c(0, 1)) +
+  # scale_x_continuous(breaks = c(seq(0, 28, 4))) +
+  xlab("No. of genes") +
+  ylab("Metabolic category") +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5, color = "#000000"),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "none",
+    legend.title = element_blank()
+  )
+
+(p6 + p7 + p8) / (p9 + p10 + p11)  +
+  plot_annotation(tag_levels = 'A') +
+  plot_layout(guides = "collect") &
+  theme(
+    legend.position = "bottom", 
+    # legend.key.size = unit(0.2, "cm"), 
+    legend.title = element_text(size = 11, face = "bold"),
+    legend.text = element_text(size = 10)
+    )
+```
+
+## Comparison of metabolic output with genes of interest in bacterial genome .gff files
+
+------------------------------------------------------------------------
+
+# Blobtools figures
+
+Here we use blobtools to generate blob plots from our original Illumina and PacBio read files.
+
+# Code appendix
+
+## submit_intergenic_HGT_DMNDblast_uniprot_workflow_psam_768gb.slurm
+
+    #!/bin/bash
+    #warning mpi tasks  != slurm tasks 32
+    #SBATCH --job-name=ig_dmnd_hgt
+    #SBATCH --output=submit_intergenic_HGT_DMNDblast_uniprot_workflow_psam_768gb.slurmOut
+    #SBATCH --partition condo
+    #SBATCH --constraint aja&0gpu&768gb
+    #SBATCH --nodes=1
+    #SBATCH --tasks-per-node=24
+    #SBATCH --time=3600:00:00
+
+    echo 'cd $SLURM_SUBMIT_DIR'
+    cd $SLURM_SUBMIT_DIR
+
+    # here we copy our needed files to a scratch directory with the names of our job ID and then enter that directory to load modules and run our analyses
+    echo 'Here we copy our files from our $SLURM_SUBMIT_DIR/ to the scratch directory that contains our job data, /scratch/$SLURM_JOB_ID '
+    cp $SLURM_SUBMIT_DIR/psam_bac_genomes/* /scratch/$SLURM_JOB_ID
+    cp $SLURM_SUBMIT_DIR/psam_genome/* /scratch/$SLURM_JOB_ID
+    cp $SLURM_SUBMIT_DIR/translate_cds.R /scratch/$SLURM_JOB_ID
+    cp $SLURM_SUBMIT_DIR/gff_filter_rename_bac.R /scratch/$SLURM_JOB_ID
+    cp /home/cbgargas/Diamond_db/*.fasta /scratch/$SLURM_JOB_ID/
+    cp -r $SLURM_SUBMIT_DIR/orfipy_psamm_complement_intergenic.fa_out/ /scratch/$SLURM_JOB_ID/
+
+    # now we change our working directory to the scratch job ID folder to work from in there
+    echo 'cd /scratch/$SLURM_JOB_ID/'
+    cd /scratch/$SLURM_JOB_ID/
+
+    # load modules
+    echo 'Load our modules'
+    module load bedtools2/2.25.0 gcc/7.3.1 mkl/19.0.4 R/4.0.2 diamond/2.0.1 python/3.8-anaconda
+
+    # source our conda env
+    echo 'source our conda env'
+    source /share/apps/bin/conda-3.8.sh
+
+    # used this post to figure out the code below
+    # https://www.biostars.org/p/216824/
+
+    # use awk to get a bedfile for bedtools that contains only coords for CDS features, then get a fasta of those features for each of our bacterial genomes
+    #awk -v OFS='\t' -v FS='\t' '$3 == "CDS" {print $1, $4-1, $5, $1 ":" $4 "-" $5 ":" $9}' 000000F.RAST.n_f.gff \
+    #| bedtools getfasta -s -name -fi 000000F.quiver_pilon.n_f.fasta -bed - -fo 000000F_CDS.faa
+
+    # opted to use grep to select lines that contain CDS sequences only
+    # made sure to include -s option for bedtools to reverse complement antisense strands
+    echo 'get fasta sequences from bacterial genomes using bedtools getfasta'
+    Rscript gff_filter_rename_bac.R
+
+    bedtools getfasta -fi 000000F.quiver_pilon.n_f.fasta -bed 0F.gff -fo 000000F.fa -s
+    bedtools getfasta -fi 000001F.quiver_pilon.n_f.fasta -bed 1F.gff -fo 000001F.fa -s
+    bedtools getfasta -fi 000002F.quiver_pilon.n_f.fasta -bed 2F.gff -fo 000002F.fa -s
+    bedtools getfasta -fi 000003F.quiver_pilon.n_f.fasta -bed 3F.gff -fo 000003F.fa -s
+
+    # Check that number of sequences matches manuscript
+    echo 'Check that number of bacterial sequences matches manuscript: 15,844'
+    grep -c '>' 00000*F.fa
+
+    echo 'check that fasta headers look as wanted.'
+    head 00000*F.fa
+
+    echo 'translate bacterial genome sequences'
+    Rscript translate_cds.R
+
+    # here we will extract the intergenic regions from our psam genome
+    # used the following CLI to drop fasta from end of gff to get result.gff
+    # https://www.biostars.org/p/270150/
+
+    #______________________________________
+
+    #Use head with the value we got, minus one, (e.g., line_number - 1) to just give us the gff lines
+
+    head -n 1070595 psamm_final.round4.all.gff > result.gff
+
+    #Sort our .gff file so bedtools doesn't get mad at us.
+
+    bedtools sort -i result.gff > result_sorted.gff
+
+    #Remove contig annotations from our .gff (or else we won't get our complement output)
+
+    grep -v contig result_sorted.gff > result_sorted_final.gff
+
+    #Run bedtools complement to get our intergenic .gff file
+
+    bedtools complement -i result_sorted_final.gff -g sizes_sorted.genome > psamm_complement.txt
+
+    #Run bedtools getfasta on our genome, using the complement .gff file to extract sequences for our intergenic regions.
+
+    bedtools getfasta -fi psam.final_assembly.Quiver_Pilon_Reapr_GapCloser.fa -bed psamm_complement.txt -fo psamm_complement.fa
+
+    # load our orfipy conda env
+    echo 'load our orfipy conda env via conda activate orfipy'
+    conda activate orfipy
+
+    # Run Orfipy on our intergenic output
+    echo 'Run Orfipy on our intergenic output'
+    orfipy psamm_complement.fa --pep psamm_complement_ORFs_orfipy.faa --dna psamm_complement_ORFs_orfipy.fa  --strand b --between-stops --include-stop --min 30
+
+    echo 'check number of lines in output .faa file'
+    wc -l orfipy_psamm_complement_intergenic.fa_out/psamm_complement_ORFs_orfipy.faa
+
+    echo 'check content of output .faa file for total number of 89F contig ORFs'
+    grep -c  89F orfipy_psamm_complement_intergenic.fa_out/psamm_complement_ORFs_orfipy.faa
+
+    echo 'check content of output .faa file for all sequences with 000089F contig ORFs'
+    grep -c 000089F orfipy_psamm_complement_intergenic.fa_out/psamm_complement_ORFs_orfipy.faa
+
+    #______________________________________
+
+    #make output directories for output
+    mkdir 01_genomes_CDS
+    mkdir 02_genomes_CDS_translated
+
+    # copy all output files from R
+    mv *.fa 01_genomes_CDS/
+    *F.gff* 01_genomes_CDS/
+    mv  *.faa 02_genomes_CDS_translated/
+
+    # check contents of each file
+    head 01_genomes_CDS/*
+    head 02_genomes_CDS_translated/*
+
+    ## Here we construct our Diamond blast database
+    # append our CDS AA sequences to our .fna file for blast input
+    echo 'append our CDS AA sequences to our .faa file for blast input'
+    cat 02_genomes_CDS_translated/00000*F_gff.faa >> uniprot_reviewed_Arc_2157_Bac_2.fasta
+
+    echo 'head nr.faa'
+    head 02_genomes_CDS_translated/nr.faa
+    echo 'tail nr.faa'
+    tail 02_genomes_CDS_translated/nr.faa
+
+    # make diamond db
+    echo 'Make Diamond DB using NR + 0-3F bacterial genomes'
+    diamond makedb --in uniprot_reviewed_Arc_2157_Bac_2.fasta -d uniprot_prok
+    diamond makedb --in uniprot-reviewed_yes+taxonomy_2759_eukaryota.fasta -d uniprot_euk
+
+    mkdir uniprot_dmnd/
+
+    mv *.dmnd uniprot_dmnd/
+
+    ## Here we actually run ourBlastp analysis
+
+    # run Diamond Blastp on intergenic regions
+    echo 'run Diamond blastp on intergenic Psammoneis sequences'
+    diamond blastp -f 6 -q orfipy_psamm_complement_intergenic.fa_out/psamm_complement_ORFs_orfipy.faa  -d uniprot_dmnd/uniprot_prok.dmnd -k 5 -o intergenic_dmnd_uniprot_prok.out.tsv -v -p 4 -b12 -c1
+    diamond blastp -f 6 -q orfipy_psamm_complement_intergenic.fa_out/psamm_complement_ORFs_orfipy.faa  -d uniprot_dmnd/uniprot_euk.dmnd -k 5 -o intergenic_dmnd_uniprot_euk.out.tsv -v -p 4 -b12 -c1
+
+    mkdir dmnd_blastp_hgt_output
+    cp *.out.tsv dmnd_blastp_hgt_output
+
+    mkdir DMNDblastp_uniprot_output_psam/
+
+    # copy the output files to directory
+    cp -r result.gff result_sorted.gff psamm.genomeFile psamm_complement.txt orfipy_psamm_complement_intergenic.fa_out psamm_complement_edit.bed uniprot_dmnd/ dmnd_blastp_hgt_output/ 02_genomes_CDS_translated/ 01_genomes_CDS/ 03_psam_intergenic/psam_intergenic_and_CDS.faa DMNDblastp_uniprot_output_psam/
+
+    # copy output to submit directory
+    cp -r DMNDblastp_uniprot_output_psam/ $SLURM_SUBMIT_DIR/
+
+```{r}
+#| label: gff_filter_rename_bac.R
+#| eval: false
+
+print("Load our libraries.")
+library(tidyverse)
+
+print("Read in our .gff files for 0F-3F.")
+gff.0f <-
+  read.csv(
+    file = "000000F.RAST.n_f.gff",
+    header = F,
+    sep = "\t", skip = 1
+  )
+
+gff.1f <-
+  read.csv(
+    file = "000001F.RAST.n_f.gff",
+    header = F,
+    sep = "\t", skip = 1
+  )
+
+gff.2f <-
+  read.csv(
+    file = "000002F.RAST.n_f.gff",
+    header = F,
+    sep = "\t", skip = 1
+  )
+
+gff.3f <-
+  read.csv(
+    file = "000003F.RAST.n_f.gff",
+    header = F,
+    sep = "\t", skip = 1
+  )
+
+print("Filter our .GFF files to include just CDS annotations & replace contig column to include genome name and peg IDs fr
+om column 9.")
+gff.0f.filt <-
+  gff.0f %>%
+  filter(V3 == "CDS")
+
+gff.1f.filt <-
+  gff.1f %>%
+  filter(V3 == "CDS")
+
+gff.2f.filt <-
+  gff.2f %>%
+  filter(V3 == "CDS")
+
+gff.3f.filt <-
+  gff.3f %>%
+  filter(V3 == "CDS")
+
+print("Head(gff.0f.filt)")
+head(gff.0f.filt)
+print("Head(gff.1f.filt)")
+head(gff.1f.filt)
+print("Head(gff.2f.filt)")
+head(gff.2f.filt)
+print("Head(gff.3f.filt)")
+head(gff.3f.filt)
+
+print("Check lengths of each .gff file.")
+print("Length 0F")
+nrow(gff.0f.filt)
+print("Length 1F")
+nrow(gff.1f.filt)
+print("Length 2F")
+nrow(gff.2f.filt)
+print("Length 3F")
+nrow(gff.3f.filt)
+
+print("Check total number of annotations, this value should be equal to 15,844.")
+nrow(gff.0f.filt) + nrow(gff.1f.filt) + nrow(gff.2f.filt) + nrow(gff.3f.filt)
+15844 == nrow(gff.0f.filt) + nrow(gff.1f.filt) + nrow(gff.2f.filt) + nrow(gff.3f.filt)
+
+print("Finally, we write our filtered dataframes as .GFF files to use with Bedtools getfasta.")
+write_delim(gff.0f.filt, file = "0F.gff", delim = "\t", col_names = FALSE)
+write_delim(gff.1f.filt, file = "1F.gff", delim = "\t", col_names = FALSE)
+write_delim(gff.2f.filt, file = "2F.gff", delim = "\t", col_names = FALSE)
+write_delim(gff.3f.filt, file = "3F.gff", delim = "\t", col_names = FALSE)
+```
+
+```{r}
+#| label: translate_cds.R
+#| eval: false
+
+library(tidyverse)
+
+gen0f <-
+  bioseq::read_fasta(file = "000000F.fa", type = "DNA")
+gen1f <-
+  bioseq::read_fasta(file = "000001F.fa", type = "DNA")
+gen2f <-
+  bioseq::read_fasta(file = "000002F.fa", type = "DNA")
+gen3f <-
+  bioseq::read_fasta(file = "000003F.fa", type = "DNA")
+
+gen0f
+gen1f
+gen2f
+gen3f
+
+bioseq::seq_nchar(gen0f) %>% range()
+bioseq::seq_nchar(gen1f) %>% range()
+bioseq::seq_nchar(gen2f) %>% range()
+bioseq::seq_nchar(gen3f) %>% range()
+
+gen0faa <-
+  bioseq::seq_translate(
+    x = gen0f,
+    codon_frame = 1,
+    code = 1,
+    codon_init = FALSE
+  )
+gen1faa <-
+  bioseq::seq_translate(
+    x = gen1f,
+    codon_frame = 1,
+    code = 1,
+    codon_init = FALSE
+  )
+gen2faa <-
+  bioseq::seq_translate(
+    x = gen2f,
+    codon_frame = 1,
+    code = 1,
+    codon_init = FALSE
+  )
+gen3faa <-
+  bioseq::seq_translate(
+    x = gen3f,
+    codon_frame = 1,
+    code = 1,
+    codon_init = FALSE
+  )
+
+gen0faa <- tibble(label = names(gen0faa), sequence = gen0faa) %>% mutate(label = paste(">", label, sep = ""))
+gen1faa <- tibble(label = names(gen1faa), sequence = gen1faa) %>% mutate(label = paste(">", label, sep = ""))
+gen2faa <- tibble(label = names(gen2faa), sequence = gen2faa) %>% mutate(label = paste(">", label, sep = ""))
+gen3faa <- tibble(label = names(gen3faa), sequence = gen3faa) %>% mutate(label = paste(">", label, sep = ""))
+
+write.table(gen0faa,
+  sep = "\n",
+  file = "000000F_gff.faa",
+  quote = FALSE, row.names = FALSE, col.names = FALSE
+)
+write.table(gen1faa,
+  sep = "\n",
+  file = "000001F_gff.faa",
+  quote = FALSE, row.names = FALSE, col.names = FALSE
+)
+write.table(gen2faa,
+  sep = "\n",
+  file = "000002F_gff.faa",
+  quote = FALSE, row.names = FALSE, col.names = FALSE
+)
+write.table(gen3faa,
+  sep = "\n",
+  file = "000003F_gff.faa",
+  quote = FALSE, row.names = FALSE, col.names = FALSE
+)
+```
+
+```{bash diamond_blast_orthogroups_768gb.sh}
+#!/bin/bash
+
+echo 'Run diamond blastp for recipient group'
+
+for f in *.fa
+do
+  echo "DMND blastp parallelization setup of  $f'!"
+  diamond blastp -b12 -c1 --query $f --db uniprot.eukaryota2759.dmnd --out $f.recipient.dmndBlastOut.tsv --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore
+  mv $f.recipient.dmndBlastOut.tsv HGT_index_output_recipient/
+done
+
+echo 'Count the number of files in HGT_index_output_recipient'
+ls -halt HGT_index_output_recipient/ | wc -l
+
+echo 'Recipient Loop complete!'
+
+echo 'Run diamond blastp for donor groups'
+
+for f in *.fa
+do
+  echo "DMND blastp of $f' in parallel!"
+  diamond blastp -b12 -c1 --query $f --db uniprot.arc2157.bac2.dmnd --out $f.donor.dmndBlastOut.tsv --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore
+  mv $f.donor.dmndBlastOut.tsv HGT_index_output_donor/
+done
+
+echo 'Count the number of files in HGT_index_output_donor'
+ls -halt HGT_index_output_donor/ | wc -l
+
+echo 'Donor loop complete! Exiting...'
+```
+
+## submit_diamond_HGT_index_768gb.slurm
+
+    #!/bin/bash
+    #warning mpi tasks  != slurm tasks 32
+    #SBATCH --job-name=hgt_index
+    #SBATCH --output=submit_diamond_HGT_index_768gb.slurmOut
+    #SBATCH --partition condo
+    #SBATCH --constraint aja&0gpu&768gb
+    #SBATCH --nodes=1
+    #SBATCH --tasks-per-node=24
+    #SBATCH --time=3600:00:00
+    cd $SLURM_SUBMIT_DIR
+
+    # here we copy our needed files to a scratch directory with the names of our job ID and then enter that directory to load modules and run our analyses
+    cp /home/cbgargas/Diamond_db/uniprot_arc_bac_euk_diamond/*.dmnd  /scratch/$SLURM_JOB_ID
+    cp -r $SLURM_SUBMIT_DIR/orthofinder_psammoneis_wade/OrthoFinder/Results_May12/Orthogroup_Sequences_Psammoneis/*.fa /scratch/$SLURM_JOB_ID
+    cp $SLURM_SUBMIT_DIR/diamond_blast_orthogroups_768gb.sh /scratch/$SLURM_JOB_ID
+    cp $SLURM_SUBMIT_DIR/translate_cds.R /scratch/$SLURM_JOB_ID
+    cp $SLURM_SUBMIT_DIR/gff_filter_rename_bac.R /scratch/$SLURM_JOB_ID
+    cp /home/cbgargas/Diamond_db/*.fasta /scratch/$SLURM_JOB_ID/
+    cp -r /home/cbgargas/01_projects/psammoneis_bacteria/psam_bac_genomes/* /scratch/$SLURM_JOB_ID/
+    cp -r /home/cbgargas/01_projects/psammoneis_bacteria/psam_genome/* /scratch/$SLURM_JOB_ID/
+
+    # now we change our working directory to the scratch job ID folder to work from in there
+    cd /scratch/$SLURM_JOB_ID/
+
+    # load our modules
+    echo 'load our modules'
+    module load diamond/2.0.1 blast/2.11.0 bedtools2/2.25.0 gcc/7.3.1 mkl/19.0.4 R/4.0.2  gcc impi
+
+    # opted to use grep to select lines that contain CDS sequences only
+    # made sure to include -s option for bedtools to reverse complement antisense strands
+    echo 'get fasta sequences from bacterial genomes using bedtools getfasta'
+    Rscript gff_filter_rename_bac.R
+
+    bedtools getfasta -fi 000000F.quiver_pilon.n_f.fasta -bed 0F.gff -fo 000000F.fa -s
+    bedtools getfasta -fi 000001F.quiver_pilon.n_f.fasta -bed 1F.gff -fo 000001F.fa -s
+    bedtools getfasta -fi 000002F.quiver_pilon.n_f.fasta -bed 2F.gff -fo 000002F.fa -s
+    bedtools getfasta -fi 000003F.quiver_pilon.n_f.fasta -bed 3F.gff -fo 000003F.fa -s
+
+    # Check that number of sequences matches manuscript
+    echo 'Check that number of bacterial sequences matches manuscript: 15,844'
+    grep -c '>' 00000*F.fa
+
+    echo 'check that fasta headers look as wanted.'
+    head 00000*F.fa
+
+    echo 'translate bacterial genome sequences'
+    Rscript translate_cds.R
+
+    ## Here we construct our Diamond blast database
+    # append our CDS AA sequences to our .fna file for blast input
+    echo 'append our CDS AA sequences to our .faa file for blast input'
+    cat 00000*F_gff.faa >> uniprot_reviewed_Arc_2157_Bac_2.fasta
+
+
+    echo 'rm initial bacterial genome files'
+    rm 00000*F.fa
+    rm psam.final_assembly.Quiver_Pilon_Reapr_GapCloser.fa
+
+    # make diamond db
+    echo 'Make Diamond DB using NR + 0-3F bacterial genomes'
+    diamond makedb --in uniprot_reviewed_Arc_2157_Bac_2.fasta -d uniprot_prok
+    diamond makedb --in uniprot-reviewed_yes+taxonomy_2759_eukaryota.fasta -d uniprot_euk
+
+    mkdir HGT_index_output_donor/
+    mkdir HGT_index_output_recipient/
+    mkdir HGT_index_output/
+
+    # Start our Diamond blast bash loop
+    echo 'Start the diamond blast for loop.'
+    ./diamond_blast_orthogroups_768gb.sh
+
+    cd HGT_index_output_donor/
+    for f in *.tsv; do sed -i "s/$/\t$f/" $f; done
+    for f in *.tsv; do sed -i '1 s/^/qseqid\tsseqid_d\tpident_d\tlength_d\tmismatch_d\tgapopen_d\tqstart_d\tqend_d\tsstart_d\tsend_d\tevalue_d\tbitscore_d\torthogroup\n/' $f; done
+
+    cd ../HGT_index_output_recipient/
+    for f in *.tsv; do sed -i "s/$/\t$f/" $f; done
+    for f in *.tsv; do sed -i '1 s/^/qseqid\tsseqid_r\tpident_r\tlength_r\tmismatch_r\tgapopen_r\tqstart_r\tqend_r\tsstart_r\tsend_r\tevalue_r\tbitscore_r\torthogroup\n/' $f; done
+
+    cd ..
+
+    echo 'Move recipient and donor directories to HGT_index_output'
+    mv HGT_index_output_* HGT_index_output/
+
+    # copy output to submit directory
+    echo 'Copy Output directories to submit directory'
+    cp -r HGT_index_output $SLURM_SUBMIT_DIR/
+
+## submit_METABOLIC_768gb.slurmOut
+
+    # srun diamond
+
+
+    #!/bin/bash
+    #warning mpi tasks  != slurm tasks 32
+    #SBATCH --job-name=metabolic
+    #SBATCH --output=submit_METABOLIC_768gb.slurmOut
+    #SBATCH --partition condo
+    #SBATCH --constraint aja&0gpu&192gb
+    #SBATCH --nodes=1
+    #SBATCH --tasks-per-node=8
+    #SBATCH --time=3600:00:00
+
+    cd $SLURM_SUBMIT_DIR
+
+    # here we copy our needed files to a scratch directory with the names of our job ID and then enter that directory to load modules and run our analyses
+    cp -r /home/cbgargas/01_projects/psammoneis_bacteria/psam_bac_genomes/ /scratch/$SLURM_JOB_ID/
+
+    # now we change our working directory to the scratch job ID folder to work from in there
+    cd /scratch/$SLURM_JOB_ID/
+
+    # load modules and conda environments
+    module load python/anaconda-3.9
+    source /share/apps/bin/conda-3.9.sh
+    conda activate METABOLIC_v4.0
+
+    perl /share/apps/python/anaconda-3.9/envs/METABOLIC_v4.0/METABOLIC/METABOLIC-G.pl -in-gn psam_bac_genomes/ -o metabolic_output/
+
+    # copy output to submit directory
+    cp -r metabolic_output/ $SLURM_SUBMIT_DIR/
