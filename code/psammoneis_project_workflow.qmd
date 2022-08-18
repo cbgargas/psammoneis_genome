@@ -4,6 +4,9 @@ author: "Cory Gargas"
 date: "11/2/2021"
 format:
   html:
+    code-fold: true
+    code-tools: true
+    code-link: true
     theme: 
       light: flatly
       dark: darkly
@@ -14,7 +17,8 @@ format:
 #| include: false
 knitr::opts_chunk$set(echo = TRUE)
 
-pacman::p_load(report, skimr, janitor, glue, ggridges, ggdist, ggtext, ggside, GenomicRanges, here, reshape2, tidyverse, tidylog, patchwork, seqinr, coRdon, data.table, TidyDensity)
+pacman::p_load(report, skimr, janitor, glue, ggridges, ggdist, ggtext, ggside, GenomicRanges, here, reshape2, tidyverse, patchwork, seqinr, coRdon, data.table, TidyDensity)
+# pacman::p_load(report, skimr, janitor, glue, ggridges, ggdist, ggtext, ggside, GenomicRanges, here, reshape2, tidyverse, tidylog, patchwork, seqinr, coRdon, data.table, TidyDensity)
 ```
 
 Note: the full code for all scripts mentioned in this document can be found in the appendix at the end of this RMD file.
@@ -151,6 +155,7 @@ Next we use the R code below to process our output files and calculate the HGT i
 
 ```{r}
 #| label: Process intergenic HGT output
+#| include: false
 
 colnames_donor <- c("qseqid", "sseqid_d", "pident_d", "length_d", "mismatch_d", "gapopen_d", "qstart_d", "qend_d", "sstart_d", "send_d", "evalue_d", "bitscore_d")
 colnames_recipients <- c("qseqid", "sseqid_r", "pident_r", "length_r", "mismatch_r", "gapopen_r", "qstart_r", "qend_r", "sstart_r", "send_r", "evalue_r", "bitscore_r")
@@ -362,7 +367,10 @@ write_tsv(uniprot2ncbi_ids_all_hits, file = "/Users/cbg/01_projects/psammoneis_g
 rm(euk, prok, ORF_headers, uniprot_reviewed, file3, colnames_donor, colnames_recipients, remove_these, bac_gff_directory, bac_gff_files)
 ```
 
-```{r hgt index data summaries}
+```{r}
+#| label: hgt index data summaries
+#| include: false
+
 #  # X is a sample of 100 normally distributed random variables
 # P = ecdf(file3$h)    # P is a function giving the empirical CDF of X
 # P(0.0)         # This returns the empirical CDF at zero (should be close to 0.5)
@@ -485,6 +493,7 @@ Based on the visualization below, an *h* value cutoff of 30 should be fine.
 
 ```{r}
 #| label: Assess h-value to use as cutoff
+#| fig-cap: ECD plot of *h* values
 file3_uniprot %>%
   ggplot(aes(x = h)) +
   stat_ecdf(geom = "point") +
@@ -886,6 +895,7 @@ file3_uniprot_prok_hits_eco %>%
 
 ```{r}
 #| label: sequence similarity ordination prep
+#| eval: false
 
 # first, read in ORFs and filter to only those with prokaryote hits
 ORFs <-
@@ -1028,6 +1038,8 @@ To obtain the nucleotide sequences for our UniProt hits we will need to search t
 
 ```{r}
 #| label: UniProt hits IPG files
+#| eval: false
+
 
 # read in our fasta file names (named after the protein sequence the nuclotide sequence translates into)
 NT_seq_files <-
@@ -1429,97 +1441,97 @@ hgt_index_output_orth <-
   )
 
 
+# 
+# # prokaryotic subset of hits
+# hgt_index_output_orth_prok_psam <-
+#   hgt_index_output_orth %>%
+#   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+#   filter(grepl("^Psammoneisjap", qseqid))
+# 
+# hgt_index_output_orth_prok_psam_classed <-
+#   hgt_index_output_orth %>%
+#   filter(!is.na(hgt_class)) %>%
+#   filter(grepl("^Psammoneisjap", qseqid))
+# 
+# hgt_index_output_orth_euk_psam <-
+#   hgt_index_output_orth %>%
+#   filter(domain_assignment == "eukaryote_strong" | domain_assignment == "eukaryote") %>%
+#   filter(grepl("^Psammoneisjap", qseqid))
+# 
+# hgt_index_output_orth_ind_psam <-
+#   hgt_index_output_orth %>%
+#   filter(domain_assignment == "indeterminate") %>%
+#   filter(grepl("^Psammoneisjap", qseqid))
+# 
+# # Psammoneis subset of hits
+#  hgt_index_output_orth %>%
+#   filter(grepl("^Psammoneisjap", qseqid)) %>% 
+#   select(domain_assignment) %>%
+#     table(useNA = "ifany")
 
-# prokaryotic subset of hits
-hgt_index_output_orth_prok_psam <-
-  hgt_index_output_orth %>%
-  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
-  filter(grepl("^Psammoneisjap", qseqid))
-
-hgt_index_output_orth_prok_psam_classed <-
-  hgt_index_output_orth %>%
-  filter(!is.na(hgt_class)) %>%
-  filter(grepl("^Psammoneisjap", qseqid))
-
-hgt_index_output_orth_euk_psam <-
-  hgt_index_output_orth %>%
-  filter(domain_assignment == "eukaryote_strong" | domain_assignment == "eukaryote") %>%
-  filter(grepl("^Psammoneisjap", qseqid))
-
-hgt_index_output_orth_ind_psam <-
-  hgt_index_output_orth %>%
-  filter(domain_assignment == "indeterminate") %>%
-  filter(grepl("^Psammoneisjap", qseqid))
-
-# Psammoneis subset of hits
- hgt_index_output_orth %>%
-  filter(grepl("^Psammoneisjap", qseqid)) %>% 
-  select(domain_assignment) %>%
-    table(useNA = "ifany")
-
- # Psammoneis subset of hits, subset to prokaryotic hits and tabled in different ways
-    hgt_index_output_orth %>%
-  filter(grepl("^Psammoneisjap", qseqid)) %>% 
-  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
-  select(taxonomic_lineage_superkingdom_d) %>%
-    table(useNA = "ifany")
- 
-   hgt_index_output_orth %>%
-  filter(grepl("^Psammoneisjap", qseqid)) %>% 
-  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
-  select(hgt_class) %>%
-    table(useNA = "ifany")
-  
-  hgt_index_output_orth %>%
-  filter(grepl("^Psammoneisjap", qseqid)) %>% 
-  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
-    filter(taxonomic_lineage_superkingdom_d == "Archaea") %>% 
-  select(hgt_class) %>%
-    table(useNA = "ifany")
-  
-    hgt_index_output_orth %>%
-  filter(grepl("^Psammoneisjap", qseqid)) %>% 
-  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
-    filter(taxonomic_lineage_superkingdom_d == "Bacteria") %>% 
-  select(hgt_class) %>%
-    table(useNA = "ifany")
-
-hgt_index_output_orth_prok_psam %>%
-  ungroup() %>% 
-  select(gene_names_uniprot_d) %>% 
-  unique()
-
- hgt_index_output_orth_prok_psam %>%
-   filter(grepl("^Psammoneisjap", qseqid)) %>% 
-  group_by(domain_assignment) %>%
-  summarise(cnt = dplyr::n()) %>%
-  mutate(freq = round(cnt / sum(cnt), 3)) %>%
-  dplyr::arrange(desc(freq))
-
- hgt_index_output_orth %>%
-  group_by(domain_assignment) %>%
-  summarise(cnt = dplyr::n()) %>%
-  mutate(freq = round(cnt / sum(cnt), 3)) %>%
-  dplyr::arrange(desc(freq))
-
-hgt_index_output_orth %>%
-  group_by(hgt_class) %>%
-  summarise(cnt = dplyr::n()) %>%
-  mutate(freq = round(cnt / sum(cnt), 3)) %>%
-  dplyr::arrange(desc(freq))
-
-hgt_index_output_orth %>%
-  select(qseqid, bitscore_d, bitscore_r, h, h_orth, domain_assignment, hgt_class, max_bitscore_r_orth) %>% 
-  filter(!is.na(hgt_class)) %>% 
-    group_by(domain_assignment) %>%
-  summarise(cnt = dplyr::n()) %>%
-  mutate(freq = round(cnt / sum(cnt), 3)) %>%
-  dplyr::arrange(desc(freq))
-
-hgt_index_output_orth %>%
-  select(qseqid, bitscore_d, bitscore_r, h, h_orth, domain_assignment, hgt_class, max_bitscore_r_orth) %>% 
-  filter(!is.na(hgt_class)) %>% 
-  summary()
+#  # Psammoneis subset of hits, subset to prokaryotic hits and tabled in different ways
+#     hgt_index_output_orth %>%
+#   filter(grepl("^Psammoneisjap", qseqid)) %>% 
+#   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+#   select(taxonomic_lineage_superkingdom_d) %>%
+#     table(useNA = "ifany")
+#  
+#    hgt_index_output_orth %>%
+#   filter(grepl("^Psammoneisjap", qseqid)) %>% 
+#   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+#   select(hgt_class) %>%
+#     table(useNA = "ifany")
+#   
+#   hgt_index_output_orth %>%
+#   filter(grepl("^Psammoneisjap", qseqid)) %>% 
+#   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+#     filter(taxonomic_lineage_superkingdom_d == "Archaea") %>% 
+#   select(hgt_class) %>%
+#     table(useNA = "ifany")
+#   
+#     hgt_index_output_orth %>%
+#   filter(grepl("^Psammoneisjap", qseqid)) %>% 
+#   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+#     filter(taxonomic_lineage_superkingdom_d == "Bacteria") %>% 
+#   select(hgt_class) %>%
+#     table(useNA = "ifany")
+# 
+# hgt_index_output_orth_prok_psam %>%
+#   ungroup() %>% 
+#   select(gene_names_uniprot_d) %>% 
+#   unique()
+# 
+#  hgt_index_output_orth_prok_psam %>%
+#    filter(grepl("^Psammoneisjap", qseqid)) %>% 
+#   group_by(domain_assignment) %>%
+#   summarise(cnt = dplyr::n()) %>%
+#   mutate(freq = round(cnt / sum(cnt), 3)) %>%
+#   dplyr::arrange(desc(freq))
+# 
+#  hgt_index_output_orth %>%
+#   group_by(domain_assignment) %>%
+#   summarise(cnt = dplyr::n()) %>%
+#   mutate(freq = round(cnt / sum(cnt), 3)) %>%
+#   dplyr::arrange(desc(freq))
+# 
+# hgt_index_output_orth %>%
+#   group_by(hgt_class) %>%
+#   summarise(cnt = dplyr::n()) %>%
+#   mutate(freq = round(cnt / sum(cnt), 3)) %>%
+#   dplyr::arrange(desc(freq))
+# 
+# hgt_index_output_orth %>%
+#   select(qseqid, bitscore_d, bitscore_r, h, h_orth, domain_assignment, hgt_class, max_bitscore_r_orth) %>% 
+#   filter(!is.na(hgt_class)) %>% 
+#     group_by(domain_assignment) %>%
+#   summarise(cnt = dplyr::n()) %>%
+#   mutate(freq = round(cnt / sum(cnt), 3)) %>%
+#   dplyr::arrange(desc(freq))
+# 
+# hgt_index_output_orth %>%
+#   select(qseqid, bitscore_d, bitscore_r, h, h_orth, domain_assignment, hgt_class, max_bitscore_r_orth) %>% 
+#   filter(!is.na(hgt_class)) %>% 
+#   summary()
 
 rm(uniprot_reviewed, d_r_hOrth, donor_files, recipient_files, recipients, donors, donor_directory, recipient_directory)
 ```
@@ -1538,6 +1550,7 @@ We ran METABOLIC on the AHPCC computing cluster, using default settings and our 
 
 ```{r}
 #| label: import METABOLIC output
+#| include: false
 
 list.files("/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/03_metabolic_psam_bacteria/metabolic_output", pattern = ".tsv")
 
@@ -1605,10 +1618,9 @@ metabolic_HMMHitNum <-
 #| label: orf_size_range
 #| fig-cap: Figure 8. Density plot of length ranges in nucleotides for intergenic ORFs by HGT classification. Full ORF data for our intergenic HGT analyses can be found in SUPPLEMENTARY FILE X.
 #| eval: true
-#| echo: false
 #| warning: false
 #| error: false
-#| output: false
+
 
 
 ### ORF size range ###
@@ -1679,12 +1691,10 @@ file3_uniprot %>%
 
 ```{r}
 #| label: gIG_domains
-#| fig-cap: Figure 7. HGT index classifications for intergenic and genic analyses. Intergenic analyses: A) Frequencies of prokaryotic, indeterminate, and eukaryotic HGT classifications [5] and B) domain level classifications for prokaryotic HGT hits. Genic analyses: C) Frequencies of prokaryotic, indeterminate, and eukaryotic HGT classifications [5], D) domain level classifications for prokaryotic HGT hits, and E) horth classifications [7]. Full datasets for genic and intergenic HGT analyses can be found in SUPPLEMENTARY FILE X and SUPPLEMENTARY FILE X, respectively.
+#| fig-cap: Figure 7. HGT index classifications for intergenic and genic analyses. Intergenic analyses - A) Frequencies of prokaryotic, indeterminate, and eukaryotic HGT classifications [5] and B) domain level classifications for prokaryotic HGT hits. Genic analyses - C) Frequencies of prokaryotic, indeterminate, and eukaryotic HGT classifications [5], D) domain level classifications for prokaryotic HGT hits, and E) horth classifications [7]. Full datasets for genic and intergenic HGT analyses can be found in SUPPLEMENTARY FILE X and SUPPLEMENTARY FILE X, respectively.
 #| eval: true
-#| echo: false
 #| warning: false
 #| error: false
-#| output: false
 
 
 ### domain classifications for genic and intergenic datasets ###
@@ -1866,10 +1876,9 @@ p5 <-
 #| label: hgt_domains_gIG
 #| fig-cap: Figure 6. Ridgeline density plots of h values for genic and intergenic datasets. Colors indicate the respective domain classification for each Diamond BLASTP hit. Vertical gray lines indicate the cutoff h value for determining domain (h = 30). For clarity, plots have been subset to only include values of -200 ≤ h ≤ 200. Full dataset for genic and intergenic HGT analyses can be found in SUPPLEMENTARY FILE X and SUPPLEMENTARY FILE X, respectively.
 #| eval: true
-#| echo: false
 #| warning: false
 #| error: false
-#| output: false
+
 
 
 
@@ -1918,10 +1927,9 @@ hgt_index_output_orth %>%
 #| label: blast_hit_gene_annotations
 #| fig-cap: Figure 5. Molecular function and gene annotations of genic and intergenic HGT hits, respectively. Genic hits were subset to only include metabolic functions with ≥ 5 occurrences. Colors indicate the source for the sseqid hit (e.g., yellow for UniProt sequences and all others for individual bacterial genomes). Intergenic hits were subset to only include annotations with > 0 occurrences. Full metabolic annotations for genic and intergenic HGT analyses can be found in SUPPLEMENTARY FILE X and SUPPLEMENTARY FILE X, respectively.
 #| eval: true
-#| echo: false
 #| warning: false
 #| error: false
-#| output: false
+
 
 
 ### Genic and intergenic metabolic characteristics of potential HGT hits, faceted by genic/intergenic ###
@@ -2005,10 +2013,9 @@ file3_uniprot_prok_hits_eco %>%
 #| label: metabolic_plot
 #| fig-cap: Figure 9. METABOLIC category (A-C) and function (D-F) output plots for bacterial genomes. A) Absence / Presence of genes in different metabolic categories for each bacterial genome, B) total number of genomes which possess a gene in a metabolic category, and C) total number of genes in each metabolic category for all genomes. D) Absence / Presence of genes in different metabolic functions for each bacterial genome, E) total number of genomes which possess a gene for a metabolic function, and F) total number of genes in each metabolic function for all genomes. Full output data and figures from METABOLIC analysis can be found in SUPPLEMENTARY FILE X and SUPPLEMENTARY FIGURE X, respectively.
 #| eval: true
-#| echo: false
 #| warning: false
 #| error: false
-#| output: false
+
 
 ### METABOLIC Category plots ###
 # heat plot of number of genome hits per category
@@ -2570,6 +2577,8 @@ write.table(gen3faa,
 ```
 
 ```{bash diamond_blast_orthogroups_768gb.sh}
+#| eval: false
+
 #!/bin/bash
 
 echo 'Run diamond blastp for recipient group'
