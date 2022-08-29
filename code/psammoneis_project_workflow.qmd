@@ -1986,6 +1986,7 @@ file3_uniprot_prok_hits_eco %>%
   viridis::scale_fill_viridis(discrete=T, begin = 0, end = .95, option = "D", na.value="black") +
   # scale_x_continuous(expand = c(0, 0), limits = c(0,190), breaks = c(190, seq(0, 18, by = 2))) +
   scale_x_continuous(expand = c(0, 0)) +
+  # scale_y_discrete(labels = scales::label_wrap(10)) +
   facet_wrap(g_ig~., scales = "free_x")  + # create faceted plots for the g_ig variable
   xlab("Frequency") +
   ylab("") +
@@ -2004,7 +2005,7 @@ file3_uniprot_prok_hits_eco %>%
     # Change axis line
     axis.line = element_line(colour = "black"),
     # indicate position of legend
-    legend.position = "right",
+    legend.position = c(.95, .1),
     legend.title = element_blank()
   )
 ```
