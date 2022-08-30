@@ -1334,6 +1334,11 @@ Finally, we enter the directory for both donor and recipient output files and ap
 # Class A: Class A genes were defined as a subset of class B genes with no recipient matches with bitscore ≥100 and
 #          no members of their respective ortholog group with recipient matches with bitscore ≥100.
 
+orthogroups <- 
+  read_tsv(here::here('data','02_hgt_index','orthofinder_psammoneis_wade','OrthoFinder','Results_May12','Orthogroups','Orthogroups_Psam_filtered.tsv')) %>% 
+  as.data.frame() %>% 
+  clean_names()
+
 # read in UniProt information for each sseqid in our blast databases
 uniprot_reviewed <-
   read_tsv(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/uniprot-reviewed_yes.tsv", col_names = T) %>%
@@ -1532,6 +1537,53 @@ hgt_index_output_orth <-
 #   select(qseqid, bitscore_d, bitscore_r, h, h_orth, domain_assignment, hgt_class, max_bitscore_r_orth) %>% 
 #   filter(!is.na(hgt_class)) %>% 
 #   summary()
+
+# Missing data visualization
+naniar::vis_miss(orthogroups)
+naniar::gg_miss_upset(orthogroups, nsets = 12, order.by = "freq")
+
+# columns that would need to be NA for Psammoneis only filtering
+orthogroups_psam_cols <-
+  colnames(orthogroups %>% select(-psammoneis_japonica, -orthogroup))
+
+# Orthogroups with multiple diatoms
+orthogroups_diatom_only <-
+  orthogroups %>% 
+  select(-nannochloropsis_gaditana, -ectocarpus_siliculosus) %>% 
+      filter(!if_all(colnames(orthogroups %>% select(-psammoneis_japonica, -orthogroup, -nannochloropsis_gaditana, -ectocarpus_siliculosus)), ~ is.na(.))) 
+
+# Filtering diatom data to include only Phaeo and Seminavis
+orthogroups_phaeo_seminavis <-
+  orthogroups_diatom_only %>% 
+  filter(!if_all(c('phaeodactylum_tricornutum', 'seminavis_robusta'), ~ is.na(.))) 
+
+# subset orthogroups where psammoneis is the only gene donor
+psam_only_orths <-  
+  orthogroups %>% 
+      filter(if_all(orthogroups_psam_cols, ~ is.na(.))) 
+
+# Let's try the reverse and filter out the HGT hits and then visualize the missingness of our data
+orthogroups_hgt_hits <-
+  orthogroups %>% 
+  filter(orthogroup %in% hgt_index_output_orth$orthogroup)
+
+# Missing Data visualization
+naniar::vis_miss(orthogroups_hgt_hits)
+naniar::gg_miss_upset(orthogroups_hgt_hits, nsets = 12, order.by = "freq")
+naniar::gg_miss_var(orthogroups_hgt_hits)
+
+# let's look at qseqs that are in psammoneis only orthogroups
+# 196 hits...82 uniques, like in the upset plot
+hgt_index_output_orth_psam_only <-
+  hgt_index_output_orth %>% 
+  filter(orthogroup %in% psam_only_orths$orthogroup) 
+
+# Let's also check on what HGT classes are from orthogroups with Phaeodactylum and Seminavis
+hgt_index_output_orth_pheo_seminavis <-
+  hgt_index_output_orth %>% 
+  filter(orthogroup %in% orthogroups_phaeo_seminavis$orthogroup) 
+
+
 
 rm(uniprot_reviewed, d_r_hOrth, donor_files, recipient_files, recipients, donors, donor_directory, recipient_directory)
 ```
