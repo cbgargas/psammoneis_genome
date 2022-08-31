@@ -154,7 +154,7 @@ Now we can finally run Diamond blastp to get our donor and recipient blast outpu
 Next we use the R code below to process our output files and calculate the HGT index for our hits:
 
 ```{r}
-#| label: Process intergenic HGT output
+#| label: Intergenic HGT index 
 #| include: false
 
 colnames_donor <- c("qseqid", "sseqid_d", "pident_d", "length_d", "mismatch_d", "gapopen_d", "qstart_d", "qend_d", "sstart_d", "send_d", "evalue_d", "bitscore_d")
@@ -1335,6 +1335,30 @@ Finally, we enter the directory for both donor and recipient output files and ap
 # Class A: Class A genes were defined as a subset of class B genes with no recipient matches with bitscore ≥100 and
 #          no members of their respective ortholog group with recipient matches with bitscore ≥100.
 
+
+# get the directory our bacterial genome GFF annotation files are in
+bac_gff_directory <-
+  here("data","01_psam_intergenic_HGT_index","psam_bac_genomes")
+
+
+# list the gff files in each directory as a variable
+bac_gff_files <-
+  list.files(path = bac_gff_directory, full.names = T, pattern = "\\.gff")
+
+
+# Here we use fread, lapply, and bind_rows to read in all of our GFF files and bind them by row (i.e., concatenating them) into a single data frame.
+bac_gff <-
+  bind_rows(lapply(bac_gff_files, fread, skip=1, header=F, 
+col.names = c("chrm_bac","source","feature_type","feature_start","feature_end","score","strand","phase","attributes"))) %>%
+  filter(feature_type == "CDS") %>% 
+  mutate(attributes = str_remove(attributes, "ID\\=fig\\|203682\\.28\\.peg\\.|ID\\=fig\\|41295\\.5\\.peg\\.|ID\\=fig\\|89373\\.5\\.peg\\.|ID\\=fig\\|1813606\\.4\\.peg\\.")) %>% 
+  separate(col = attributes, into = c("bac_gen_peg", "bac_gen_gene_annotation"), sep = ";") %>% 
+  mutate(bac_gen_gene_annotation = str_remove(bac_gen_gene_annotation, "Name\\=")) %>% 
+  mutate(length_bac = paste(feature_start,"-",feature_end, "(", strand, ")", sep = "")) %>%
+  select(-c("feature_type","feature_start","feature_end","score","strand")) %>% 
+  mutate(chrm_bac = str_remove(chrm_bac, pattern = "^00000")) 
+
+# read in our orthogroup information
 orthogroups <- 
   read_tsv(here::here('data','02_hgt_index','orthofinder_psammoneis_wade','OrthoFinder','Results_May12','Orthogroups','Orthogroups_Psam_filtered.tsv')) %>% 
   as.data.frame() %>% 
@@ -1432,11 +1456,12 @@ hgt_index_output_orth <-
         h >= 30 & bitscore_d >= 100 & (domain_assignment == "prokaryote" |domain_assignment == "prokaryote_strong")  ~ "C"
       )
   ) %>%
-  separate(sseqid_r, sep = "\\|", into = c("uniprot_prefix_r", "uniprot_id_r", "product_r"), remove = T) %>% # sseqid_r split
+   separate(sseqid_r, sep = "\\|", into = c("uniprot_prefix_r", "uniprot_id_r", "product_r"), remove = T) %>% # sseqid_r split
   separate(sseqid_d, sep = "\\|", into = c("uniprot_prefix_d", "uniprot_id_d", "product_d"), remove = F) %>% # uniprot hits
+  separate(sseqid_d, sep = "\\.", into = c("chrm_bac", "bac_gen_peg"), remove = F) %>% # bacterial genome hits
   left_join(., uniprot_reviewed, by = c("uniprot_id_r" = "entry")) %>% # Join Uniprot info to recipient hits
   select(-c(starts_with("uniprot_prefix"))) %>%
-    dplyr::rename(
+  dplyr::rename(
     entry_name_uniprot_r = entry_name, gene_ontology_biological_process_uniprot_r = gene_ontology_biological_process, gene_ontology_molecular_function_uniprot_r = gene_ontology_molecular_function, gene_names_uniprot_r = gene_names,
     organism_uniprot_r = organism, taxonomic_lineage_superkingdom_r = taxonomic_lineage_superkingdom
   ) %>%
@@ -1444,15 +1469,38 @@ hgt_index_output_orth <-
   dplyr::rename(
     entry_name_uniprot_d = entry_name, gene_ontology_biological_process_uniprot_d = gene_ontology_biological_process, gene_ontology_molecular_function_uniprot_d = gene_ontology_molecular_function, gene_names_uniprot_d = gene_names,
     organism_uniprot_d = organism, taxonomic_lineage_superkingdom_d = taxonomic_lineage_superkingdom
-  ) %>% 
-   mutate(taxonomic_lineage_superkingdom_d = ifelse(is.na(taxonomic_lineage_superkingdom_d), "Bacteria", taxonomic_lineage_superkingdom_d)) %>%  # replace NAs in superkingdom column with bacteria for our bacterial genome hits
-  mutate(bac_genome =
+  ) %>%
+  left_join(., bac_gff, by = c("chrm_bac","bac_gen_peg")) %>% # join our gff info
+  as.data.frame() %>% 
+  mutate(taxonomic_lineage_superkingdom_d = ifelse(is.na(taxonomic_lineage_superkingdom_d), "Bacteria", taxonomic_lineage_superkingdom_d)) %>% # replace NAs in superkingdom column with bacteria for our bacterial genome hits
+  mutate(
+      organism_uniprot_d = # assign taxonomy of our bacterial genomes tp organism_uniprot_d column
+        case_when(
+          # strong prokaryote
+          chrm_bac == "0F" ~ "Phycisphaerae sp.",
+          chrm_bac == "1F" ~ "Rhodovibrionaceae sp.",
+          chrm_bac == "2F" ~ "Ekhidna sp.",
+          chrm_bac == "3F" ~ "Balneola sp.",
+        )
+    ) %>% 
+    mutate(bac_genome =
            case_when(
              str_detect(sseqid_d, '0F\\.[:digit:]') ~ "0F",
              str_detect(sseqid_d, '1F\\.[:digit:]') ~ "1F",
              str_detect(sseqid_d, '2F\\.[:digit:]') ~ "2F",
              str_detect(sseqid_d, '3F\\.[:digit:]') ~ "3F",
            ))
+
+rm(uniprot_reviewed, d_r_hOrth, donor_files, recipient_files, recipients, donors, donor_directory, recipient_directory)
+```
+
+```{r}
+#| label: Genic data summaries and exploration
+#| eval: false
+#| echo: true
+#| warning: false
+#| error: false
+#| output: false
 
 
 # prokaryotic subset of hits
@@ -1590,9 +1638,6 @@ hgt_index_output_orth_pheo_seminavis <-
   hgt_index_output_orth %>% 
   filter(orthogroup %in% orthogroups_phaeo_seminavis$orthogroup) 
 
-
-
-rm(uniprot_reviewed, d_r_hOrth, donor_files, recipient_files, recipients, donors, donor_directory, recipient_directory)
 ```
 
 ------------------------------------------------------------------------
