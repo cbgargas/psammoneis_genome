@@ -1488,7 +1488,7 @@ hgt_index_output_orth <-
              str_detect(sseqid_d, '0F\\.[:digit:]') ~ "0F",
              str_detect(sseqid_d, '1F\\.[:digit:]') ~ "1F",
              str_detect(sseqid_d, '2F\\.[:digit:]') ~ "2F",
-             str_detect(sseqid_d, '3F\\.[:digit:]') ~ "3F",
+             str_detect(sseqid_d, '3F\\.[:digit:]') ~ "3F"
            ))
 
 rm(uniprot_reviewed, d_r_hOrth, donor_files, recipient_files, recipients, donors, donor_directory, recipient_directory)
@@ -1518,37 +1518,47 @@ hgt_index_output_orth_prok_psam %>%
   arrange(desc(Freq))
 
 # Psammoneis subset of hits
- hgt_index_output_orth %>%
+hgt_index_output_orth %>%
   filter(grepl("^Psammoneisjap", qseqid)) %>%
   select(domain_assignment, bac_genome) %>%
-    table(useNA = "ifany")
+    table(useNA = "ifany") %>% 
+   as_tibble() %>% 
+   dplyr::mutate(bac_genome = replace_na(bac_genome, "uniprot"))
 
  # Psammoneis subset of hits, subset to prokaryotic hits and tabled in different ways
     hgt_index_output_orth %>%
   filter(grepl("^Psammoneisjap", qseqid)) %>%
   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
   select(taxonomic_lineage_superkingdom_d, bac_genome) %>%
-    table(useNA = "ifany")
+    table(useNA = "ifany") %>% 
+   as_tibble() %>% 
+   dplyr::mutate(bac_genome = replace_na(bac_genome, "uniprot"))
 
    hgt_index_output_orth %>%
   filter(grepl("^Psammoneisjap", qseqid)) %>%
   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
   select(hgt_class, bac_genome) %>%
-    table(useNA = "ifany")
+    table(useNA = "ifany") %>% 
+   as_tibble() %>% 
+   dplyr::mutate(bac_genome = replace_na(bac_genome, "uniprot"))
 
   hgt_index_output_orth %>%
   filter(grepl("^Psammoneisjap", qseqid)) %>%
   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
     filter(taxonomic_lineage_superkingdom_d == "Archaea") %>%
   select(hgt_class, bac_genome) %>%
-    table(useNA = "ifany")
+    table(useNA = "ifany") %>% 
+   as_tibble() %>% 
+   dplyr::mutate(bac_genome = replace_na(bac_genome, "uniprot"))
 
     hgt_index_output_orth %>%
   filter(grepl("^Psammoneisjap", qseqid)) %>%
   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
     filter(taxonomic_lineage_superkingdom_d == "Bacteria") %>%
   select(hgt_class, bac_genome) %>%
-    table(useNA = "ifany")
+    table(useNA = "ifany") %>% 
+   as_tibble() %>% 
+   dplyr::mutate(bac_genome = replace_na(bac_genome, "uniprot"))
 
 hgt_index_output_orth_prok_psam %>%
   ungroup() %>%
