@@ -1318,6 +1318,7 @@ Finally, we enter the directory for both donor and recipient output files and ap
 
 ## *h*<sub>orth</sub> calculation
 
+
 ```{r}
 #| label: Crsip HGT index classification
 
@@ -1347,9 +1348,9 @@ uniprot_reviewed <-
 
 # assign the output directories as variables
 donor_directory <-
-  "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/HGT_index_output/HGT_index_output_donor/"
+  "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/HGT_index_output2/HGT_index_output_donor/"
 recipient_directory <-
-  "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/HGT_index_output/HGT_index_output_recipient/"
+  "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/HGT_index_output2/HGT_index_output_recipient/"
 
 # list the files in each directory as a variable
 donors <-
@@ -1432,7 +1433,7 @@ hgt_index_output_orth <-
       )
   ) %>%
   separate(sseqid_r, sep = "\\|", into = c("uniprot_prefix_r", "uniprot_id_r", "product_r"), remove = T) %>% # sseqid_r split
-  separate(sseqid_d, sep = "\\|", into = c("uniprot_prefix_d", "uniprot_id_d", "product_d"), remove = T) %>% # uniprot hits
+  separate(sseqid_d, sep = "\\|", into = c("uniprot_prefix_d", "uniprot_id_d", "product_d"), remove = F) %>% # uniprot hits
   left_join(., uniprot_reviewed, by = c("uniprot_id_r" = "entry")) %>% # Join Uniprot info to recipient hits
   select(-c(starts_with("uniprot_prefix"))) %>%
     dplyr::rename(
@@ -1443,100 +1444,100 @@ hgt_index_output_orth <-
   dplyr::rename(
     entry_name_uniprot_d = entry_name, gene_ontology_biological_process_uniprot_d = gene_ontology_biological_process, gene_ontology_molecular_function_uniprot_d = gene_ontology_molecular_function, gene_names_uniprot_d = gene_names,
     organism_uniprot_d = organism, taxonomic_lineage_superkingdom_d = taxonomic_lineage_superkingdom
-  )
+  ) %>% 
+   mutate(taxonomic_lineage_superkingdom_d = ifelse(is.na(taxonomic_lineage_superkingdom_d), "Bacteria", taxonomic_lineage_superkingdom_d)) %>%  # replace NAs in superkingdom column with bacteria for our bacterial genome hits
+  mutate(bac_genome =
+           case_when(
+             str_detect(sseqid_d, '0F\\.[:digit:]') ~ "0F",
+             str_detect(sseqid_d, '1F\\.[:digit:]') ~ "1F",
+             str_detect(sseqid_d, '2F\\.[:digit:]') ~ "2F",
+             str_detect(sseqid_d, '3F\\.[:digit:]') ~ "3F",
+           ))
 
 
-# 
-# # prokaryotic subset of hits
-# hgt_index_output_orth_prok_psam <-
-#   hgt_index_output_orth %>%
-#   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
-#   filter(grepl("^Psammoneisjap", qseqid))
-# 
-# hgt_index_output_orth_prok_psam_classed <-
-#   hgt_index_output_orth %>%
-#   filter(!is.na(hgt_class)) %>%
-#   filter(grepl("^Psammoneisjap", qseqid))
-# 
-# hgt_index_output_orth_euk_psam <-
-#   hgt_index_output_orth %>%
-#   filter(domain_assignment == "eukaryote_strong" | domain_assignment == "eukaryote") %>%
-#   filter(grepl("^Psammoneisjap", qseqid))
-# 
-# hgt_index_output_orth_ind_psam <-
-#   hgt_index_output_orth %>%
-#   filter(domain_assignment == "indeterminate") %>%
-#   filter(grepl("^Psammoneisjap", qseqid))
-# 
-# # Psammoneis subset of hits
-#  hgt_index_output_orth %>%
-#   filter(grepl("^Psammoneisjap", qseqid)) %>% 
-#   select(domain_assignment) %>%
-#     table(useNA = "ifany")
+# prokaryotic subset of hits
+hgt_index_output_orth_prok_psam <-
+  hgt_index_output_orth %>%
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+  filter(grepl("^Psammoneisjap", qseqid))
 
-#  # Psammoneis subset of hits, subset to prokaryotic hits and tabled in different ways
-#     hgt_index_output_orth %>%
-#   filter(grepl("^Psammoneisjap", qseqid)) %>% 
-#   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
-#   select(taxonomic_lineage_superkingdom_d) %>%
-#     table(useNA = "ifany")
-#  
-#    hgt_index_output_orth %>%
-#   filter(grepl("^Psammoneisjap", qseqid)) %>% 
-#   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
-#   select(hgt_class) %>%
-#     table(useNA = "ifany")
-#   
-#   hgt_index_output_orth %>%
-#   filter(grepl("^Psammoneisjap", qseqid)) %>% 
-#   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
-#     filter(taxonomic_lineage_superkingdom_d == "Archaea") %>% 
-#   select(hgt_class) %>%
-#     table(useNA = "ifany")
-#   
-#     hgt_index_output_orth %>%
-#   filter(grepl("^Psammoneisjap", qseqid)) %>% 
-#   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
-#     filter(taxonomic_lineage_superkingdom_d == "Bacteria") %>% 
-#   select(hgt_class) %>%
-#     table(useNA = "ifany")
-# 
-# hgt_index_output_orth_prok_psam %>%
-#   ungroup() %>% 
-#   select(gene_names_uniprot_d) %>% 
-#   unique()
-# 
-#  hgt_index_output_orth_prok_psam %>%
-#    filter(grepl("^Psammoneisjap", qseqid)) %>% 
-#   group_by(domain_assignment) %>%
-#   summarise(cnt = dplyr::n()) %>%
-#   mutate(freq = round(cnt / sum(cnt), 3)) %>%
-#   dplyr::arrange(desc(freq))
-# 
-#  hgt_index_output_orth %>%
-#   group_by(domain_assignment) %>%
-#   summarise(cnt = dplyr::n()) %>%
-#   mutate(freq = round(cnt / sum(cnt), 3)) %>%
-#   dplyr::arrange(desc(freq))
-# 
-# hgt_index_output_orth %>%
-#   group_by(hgt_class) %>%
-#   summarise(cnt = dplyr::n()) %>%
-#   mutate(freq = round(cnt / sum(cnt), 3)) %>%
-#   dplyr::arrange(desc(freq))
-# 
-# hgt_index_output_orth %>%
-#   select(qseqid, bitscore_d, bitscore_r, h, h_orth, domain_assignment, hgt_class, max_bitscore_r_orth) %>% 
-#   filter(!is.na(hgt_class)) %>% 
-#     group_by(domain_assignment) %>%
-#   summarise(cnt = dplyr::n()) %>%
-#   mutate(freq = round(cnt / sum(cnt), 3)) %>%
-#   dplyr::arrange(desc(freq))
-# 
-# hgt_index_output_orth %>%
-#   select(qseqid, bitscore_d, bitscore_r, h, h_orth, domain_assignment, hgt_class, max_bitscore_r_orth) %>% 
-#   filter(!is.na(hgt_class)) %>% 
-#   summary()
+# subset to just hits to our bacteria genomes
+hgt_index_output_orth_prok_psam %>% 
+  filter(str_detect(sseqid_d, '[:digit:]F\\.[:digit:]')) %>% 
+  select(orthogroup) %>% 
+  table() %>% 
+  data.frame() %>% 
+  arrange(desc(Freq))
+
+# Psammoneis subset of hits
+ hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>%
+  select(domain_assignment, bac_genome) %>%
+    table(useNA = "ifany")
+
+ # Psammoneis subset of hits, subset to prokaryotic hits and tabled in different ways
+    hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>%
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+  select(taxonomic_lineage_superkingdom_d, bac_genome) %>%
+    table(useNA = "ifany")
+
+   hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>%
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+  select(hgt_class, bac_genome) %>%
+    table(useNA = "ifany")
+
+  hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>%
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+    filter(taxonomic_lineage_superkingdom_d == "Archaea") %>%
+  select(hgt_class, bac_genome) %>%
+    table(useNA = "ifany")
+
+    hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>%
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+    filter(taxonomic_lineage_superkingdom_d == "Bacteria") %>%
+  select(hgt_class, bac_genome) %>%
+    table(useNA = "ifany")
+
+hgt_index_output_orth_prok_psam %>%
+  ungroup() %>%
+  select(gene_names_uniprot_d) %>%
+  unique()
+
+ hgt_index_output_orth_prok_psam %>%
+   filter(grepl("^Psammoneisjap", qseqid)) %>%
+  group_by(domain_assignment) %>%
+  summarise(cnt = dplyr::n()) %>%
+  mutate(freq = round(cnt / sum(cnt), 3)) %>%
+  dplyr::arrange(desc(freq))
+
+ hgt_index_output_orth %>%
+  group_by(domain_assignment) %>%
+  summarise(cnt = dplyr::n()) %>%
+  mutate(freq = round(cnt / sum(cnt), 3)) %>%
+  dplyr::arrange(desc(freq))
+
+hgt_index_output_orth %>%
+  group_by(hgt_class) %>%
+  summarise(cnt = dplyr::n()) %>%
+  mutate(freq = round(cnt / sum(cnt), 3)) %>%
+  dplyr::arrange(desc(freq))
+
+hgt_index_output_orth %>%
+  select(qseqid, bitscore_d, bitscore_r, h, h_orth, domain_assignment, hgt_class, max_bitscore_r_orth) %>%
+  filter(!is.na(hgt_class)) %>%
+    group_by(domain_assignment) %>%
+  summarise(cnt = dplyr::n()) %>%
+  mutate(freq = round(cnt / sum(cnt), 3)) %>%
+  dplyr::arrange(desc(freq))
+
+hgt_index_output_orth %>%
+  select(qseqid, bitscore_d, bitscore_r, h, h_orth, domain_assignment, hgt_class, max_bitscore_r_orth) %>%
+  filter(!is.na(hgt_class)) %>%
+  summary()
 
 # Missing data visualization
 naniar::vis_miss(orthogroups)
@@ -1560,7 +1561,13 @@ orthogroups_phaeo_seminavis <-
 # subset orthogroups where psammoneis is the only gene donor
 psam_only_orths <-  
   orthogroups %>% 
-      filter(if_all(orthogroups_psam_cols, ~ is.na(.))) 
+  filter(if_all(orthogroups_psam_cols, ~ is.na(.))) %>% 
+  select(orthogroup, psammoneis_japonica)
+
+# let's see which singleton OGs are in Psammoneis
+# end up with an empty DF, so all of these are not singletons
+psam_only_orths %>% 
+  filter(!str_detect(psammoneis_japonica, ','))
 
 # Let's try the reverse and filter out the HGT hits and then visualize the missingness of our data
 orthogroups_hgt_hits <-
