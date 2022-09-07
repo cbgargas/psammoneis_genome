@@ -1403,6 +1403,10 @@ recipient_files <-
 # This needs to be done first because R gets grumpy with you when trying this and everything else in a single, piped command.
 d_r_hOrth <-
   full_join(donor_files, recipient_files, by = c("qseqid", "orthogroup")) %>% # join donor and recipient output by qseqid and orthogroup columns
+  replace_na(list(
+    bitscore_d = 0,
+    bitscore_r = 0
+  )) %>% # here we replace all null values in recipient and donor bitscores with zeros. This is necessary to assign our 'strong' domain classes.
   mutate(h = bitscore_d - bitscore_r) %>% # calculate HGT index (h)
   group_by(orthogroup) %>% # necessary to calculate h_orth
   dplyr::summarise(dplyr::across(dplyr::starts_with("h"),
@@ -1512,12 +1516,40 @@ hgt_index_output_orth_prok_psam <-
 # subset to just hits to our bacteria genomes
 hgt_index_output_orth_prok_psam %>% 
   filter(str_detect(sseqid_d, '[:digit:]F\\.[:digit:]')) %>% 
-  select(orthogroup) %>% 
+  select(orthogroup, bac_genome, bac_gen_peg) %>% 
   table() %>% 
   data.frame() %>% 
-  arrange(desc(Freq))
+  arrange(desc(Freq)) %>% 
+  filter(Freq >= 1)
 
-# Psammoneis subset of hits
+# Just the bac_genome and peg number frequencies
+hgt_index_output_orth_prok_psam %>% 
+  filter(str_detect(sseqid_d, '[:digit:]F\\.[:digit:]')) %>% 
+  select(bac_genome, bac_gen_peg, bac_gen_gene_annotation) %>% 
+  table() %>% 
+  data.frame() %>% 
+  arrange(desc(bac_genome), desc(bac_gen_peg)) %>% 
+  filter(Freq >= 3)
+
+# Here we will filter to see if any of the sseqid_d values match the genome.PEG IDs fthat Matt recovered
+filter(hgt_index_output_orth_prok_psam, sseqid_d %in% c("0F.2931","0F.660","0F.766","0F.3987","0F.4510","3F.313","0F.1819")) %>% 
+  select(where(~ !(all(is.na(.)) | all(. == "")))) # Drop empty columns
+
+  
+# Psammoneis subset of hits by domain assignment
+hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>%
+  select(domain_assignment) %>%
+    table(useNA = "ifany")
+
+# Class assignments for all hits
+ hgt_index_output_orth %>%
+  group_by(domain_assignment) %>%
+  summarise(cnt = dplyr::n()) %>%
+  mutate(freq = round(cnt / sum(cnt), 3)) %>%
+  dplyr::arrange(desc(freq))
+
+#domain assignments by origin of hit
 hgt_index_output_orth %>%
   filter(grepl("^Psammoneisjap", qseqid)) %>%
   select(domain_assignment, bac_genome) %>%
@@ -1525,8 +1557,22 @@ hgt_index_output_orth %>%
    as_tibble() %>% 
    dplyr::mutate(bac_genome = replace_na(bac_genome, "uniprot"))
 
- # Psammoneis subset of hits, subset to prokaryotic hits and tabled in different ways
+# Number of unique orthogroups per domain assignment
+hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>%
+  group_by(domain_assignment) %>% 
+  summarise(cnt = dplyr::n(), unique_orthogroups = length(unique(orthogroup)))
+
+ # Domain assignment summaries
+# Domain assignments for prokaryotic hits
     hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>%
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+  select(taxonomic_lineage_superkingdom_d) %>%
+    table(useNA = "ifany") 
+    
+# Domain assignments for prokaryotic hits by origin of hit
+hgt_index_output_orth %>%
   filter(grepl("^Psammoneisjap", qseqid)) %>%
   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
   select(taxonomic_lineage_superkingdom_d, bac_genome) %>%
@@ -1534,6 +1580,31 @@ hgt_index_output_orth %>%
    as_tibble() %>% 
    dplyr::mutate(bac_genome = replace_na(bac_genome, "uniprot"))
 
+# Class assignment summaries
+# class assignments
+   hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>%
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+  select(hgt_class) %>%
+    table(useNA = "ifany") 
+
+   # bacteria genome subset
+  hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>%
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+  filter(bac_genome == "0F" | bac_genome == "1F" | bac_genome == "2F"| bac_genome == "3F") %>%
+  select(where(~ !(all(is.na(.)) | all(. == "")))) %>% # Drop empty columns
+  select(hgt_class) %>%
+    table(useNA = "ifany") 
+   
+   # Class assignments for all hits   
+   hgt_index_output_orth %>%
+  group_by(hgt_class) %>%
+  summarise(cnt = dplyr::n()) %>%
+  mutate(freq = round(cnt / sum(cnt), 3)) %>%
+  dplyr::arrange(desc(freq))
+
+# class assignments by hit origin
    hgt_index_output_orth %>%
   filter(grepl("^Psammoneisjap", qseqid)) %>%
   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
@@ -1542,6 +1613,16 @@ hgt_index_output_orth %>%
    as_tibble() %>% 
    dplyr::mutate(bac_genome = replace_na(bac_genome, "uniprot"))
 
+# class hits by domain archaea      
+  hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>%
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+    filter(taxonomic_lineage_superkingdom_d == "Archaea") %>%
+  select(hgt_class) %>%
+    table(useNA = "ifany") 
+
+# class hits by domain archaea by origin of hit
+# obviously it will only return uniprot as a value because all of our genomes are from bacteria
   hgt_index_output_orth %>%
   filter(grepl("^Psammoneisjap", qseqid)) %>%
   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
@@ -1551,51 +1632,32 @@ hgt_index_output_orth %>%
    as_tibble() %>% 
    dplyr::mutate(bac_genome = replace_na(bac_genome, "uniprot"))
 
+# class hits by domain bacteria      
+  hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>%
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+    filter(taxonomic_lineage_superkingdom_d == "Bacteria") %>%
+  select(hgt_class) %>%
+    table(useNA = "ifany") 
+
+# class hits by domain bacteria by origin of hit
+  hgt_index_output_orth %>%
+  filter(grepl("^Psammoneisjap", qseqid)) %>%
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+    filter(taxonomic_lineage_superkingdom_d == "Bacteria") %>%
+   dplyr::mutate(bac_genome = replace_na(bac_genome, "uniprot")) %>% 
+  select(hgt_class) %>%
+    table(useNA = "ifany") %>% 
+   as_tibble()
+
     hgt_index_output_orth %>%
   filter(grepl("^Psammoneisjap", qseqid)) %>%
   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
     filter(taxonomic_lineage_superkingdom_d == "Bacteria") %>%
-  select(hgt_class, bac_genome) %>%
+      filter(bac_genome %in% c("0F","1F","2F","3F")) %>%
+  select(hgt_class) %>%
     table(useNA = "ifany") %>% 
-   as_tibble() %>% 
-   dplyr::mutate(bac_genome = replace_na(bac_genome, "uniprot"))
-
-hgt_index_output_orth_prok_psam %>%
-  ungroup() %>%
-  select(gene_names_uniprot_d) %>%
-  unique()
-
- hgt_index_output_orth_prok_psam %>%
-   filter(grepl("^Psammoneisjap", qseqid)) %>%
-  group_by(domain_assignment) %>%
-  summarise(cnt = dplyr::n()) %>%
-  mutate(freq = round(cnt / sum(cnt), 3)) %>%
-  dplyr::arrange(desc(freq))
-
- hgt_index_output_orth %>%
-  group_by(domain_assignment) %>%
-  summarise(cnt = dplyr::n()) %>%
-  mutate(freq = round(cnt / sum(cnt), 3)) %>%
-  dplyr::arrange(desc(freq))
-
-hgt_index_output_orth %>%
-  group_by(hgt_class) %>%
-  summarise(cnt = dplyr::n()) %>%
-  mutate(freq = round(cnt / sum(cnt), 3)) %>%
-  dplyr::arrange(desc(freq))
-
-hgt_index_output_orth %>%
-  select(qseqid, bitscore_d, bitscore_r, h, h_orth, domain_assignment, hgt_class, max_bitscore_r_orth) %>%
-  filter(!is.na(hgt_class)) %>%
-    group_by(domain_assignment) %>%
-  summarise(cnt = dplyr::n()) %>%
-  mutate(freq = round(cnt / sum(cnt), 3)) %>%
-  dplyr::arrange(desc(freq))
-
-hgt_index_output_orth %>%
-  select(qseqid, bitscore_d, bitscore_r, h, h_orth, domain_assignment, hgt_class, max_bitscore_r_orth) %>%
-  filter(!is.na(hgt_class)) %>%
-  summary()
+   as_tibble() 
 
 # Missing data visualization
 naniar::vis_miss(orthogroups)
@@ -1620,7 +1682,8 @@ orthogroups_phaeo_seminavis <-
 psam_only_orths <-  
   orthogroups %>% 
   filter(if_all(orthogroups_psam_cols, ~ is.na(.))) %>% 
-  select(orthogroup, psammoneis_japonica)
+  select(orthogroup, psammoneis_japonica) %>% 
+  mutate(gene_count = str_count(psammoneis_japonica, ',')+1)
 
 # let's see which singleton OGs are in Psammoneis
 # end up with an empty DF, so all of these are not singletons
@@ -1647,6 +1710,72 @@ hgt_index_output_orth_psam_only <-
 hgt_index_output_orth_pheo_seminavis <-
   hgt_index_output_orth %>% 
   filter(orthogroup %in% orthogroups_phaeo_seminavis$orthogroup) 
+
+# Of the Psammoneis prokaryotic HGT hits, figure out the ratio of Psammoneis only OGs to multi-diatom OGs
+# Psammoneis_only
+left_join(hgt_index_output_orth_prok_psam, orthogroups, by = "orthogroup") %>% 
+  filter(orthogroup %in% psam_only_orths$orthogroup)
+  
+
+# Multi-diatom
+left_join(hgt_index_output_orth_prok_psam, orthogroups, by = "orthogroup") %>% 
+  filter(orthogroup %in% orthogroups_diatom_only$orthogroup)
+
+# Then we will figure out, of the HGT hits to our Bacterial genomes, which are Psammoneis-only and which are multi-diatom 
+# Psammoneis_only
+left_join(hgt_index_output_orth_prok_psam, orthogroups, by = "orthogroup") %>% 
+   filter(bac_genome %in% c("0F","1F","2F","3F")) %>% 
+  filter(orthogroup %in% psam_only_orths$orthogroup) 
+
+# Multi-diatom
+left_join(hgt_index_output_orth_prok_psam, orthogroups, by = "orthogroup") %>% 
+   filter(bac_genome %in% c("0F","1F","2F","3F")) %>% 
+  filter(orthogroup %in% orthogroups_diatom_only$orthogroup)
+
+# Then we will import Psammoneis CDS sequences from orthofinder and filter them to only the sequences of Class A hits to our nbacterial genome
+# We'll then export those and NCBI blastp them to check that the top hit is prokaryotic
+# Psammoneis_only
+qseqs_classA_bacGen <-
+  left_join(hgt_index_output_orth_prok_psam, orthogroups, by = "orthogroup") %>% 
+   filter(bac_genome %in% c("0F","1F","2F","3F")) %>% 
+  filter(orthogroup %in% psam_only_orths$orthogroup) %>% 
+  filter(hgt_class == "A") %>% 
+  select(qseqid) %>% 
+  tibble()
+
+psam_CDS <-
+  bioseq::read_fasta(file = "~/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/orthofinder_psammoneis_wade/Psammoneis_japonica.faa", type = "AA")
+
+
+psam_CDS_classA_bacgen <-
+  tibble(label = names(psam_CDS), sequence = psam_CDS) %>% 
+  left_join(qseqs_classA_bacGen,., by = c('qseqid' = 'label')) %>% 
+  rename(label = qseqid) %>% 
+  mutate(label = paste(">", label, sep = ""))
+
+write.table(psam_CDS_classA_bacgen,
+  sep = "\n",
+  file = "~/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/orthofinder_psammoneis_wade/Psammoneis_japonica_classA_bacGenHits.faa",
+  quote = FALSE, row.names = FALSE, col.names = FALSE
+)
+
+# read in our csv files from our blast searches
+description_files <-
+  list.files(path = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/orthofinder_psammoneis_wade/classA_bacGen_blastp/", full.names = T, pattern = "^HHR9STDN01R")
+
+# Here we use fread, lapply, and bind_rows to read in all of our output files and bind them by row (i.e., concatenating them) into a single dataframe for donor and recipient results, respectively.
+descriptions <-
+  bind_rows(lapply(description_files, fread)) %>%
+  mutate(Accession = str_extract(Accession, '[:alnum:]+\\.[:digit:]""\\)$')) %>% 
+  mutate(Accession = str_remove(Accession, '""\\)$')) %>% 
+  left_join(., 
+            vroom::vroom("/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/orthofinder_psammoneis_wade/classA_bacGen_blastp/HHRUG9Y2013-Alignment-HitTable.csv", col_names = FALSE), 
+            by = c("Accession"="X2")) %>% 
+   group_by(X1) %>% # group our data by sqeqid
+  top_n(1, X4) %>% # select the top blast search result by bitscore for each seq_id
+  slice(1) %>%
+  # mutate(orthogroup = str_remove(orthogroup, ".fa.donor.dmndBlastOut.tsv")) %>%
+  ungroup()
 
 ```
 
@@ -1739,14 +1868,14 @@ metabolic_HMMHitNum <-
 
 ### ORF size range ###
 # maybe add CDS hit ranges?
-# file3_uniprot %>% 
-#   select(length, domain_assignment) %>% 
-#   mutate(length = as.numeric(length)) %>% 
-#   ggplot(aes(y = domain_assignment, x = length, color = domain_assignment, fill = domain_assignment)) +
-#   geom_density_ridges(rel_min_height = 0.005, alpha = .75) +
+# file3_uniprot %>%
+#   select(length, domain_assignment) %>%
+#   mutate(length = as.numeric(length)) %>%
+#   ggplot(aes(x = length, color = domain_assignment, label = domain_assignment)) +
+#   # geom_density_ridges(rel_min_height = 0.005, alpha = .75) +
 #   # geom_density_ridges(alpha=0.75) +
 #   viridis::scale_color_viridis(discrete=T) +
-#   viridis::scale_fill_viridis(discrete=T) +
+#   geomtextpath::geom_textdensity(size = 6, fontface = 2, hjust = 0.2, vjust = 0.3) #
 #   scale_x_continuous(limits = c(0,3500), breaks = c(seq(0, 3500, by = 500))) +
 #   xlab("ORF length (nucleotides)") +
 #   ylab("") +
@@ -2039,7 +2168,7 @@ hgt_index_output_orth %>%
 
 ```{r}
 #| label: blast_hit_gene_annotations
-#| fig-cap: Figure 5. Molecular function and gene annotations of genic and intergenic HGT hits, respectively. Genic hits were subset to only include metabolic functions with ≥ 5 occurrences. Colors indicate the source for the sseqid hit (e.g., yellow for UniProt sequences and all others for individual bacterial genomes). Intergenic hits were subset to only include annotations with > 0 occurrences. Full metabolic annotations for genic and intergenic HGT analyses can be found in SUPPLEMENTARY FILE X and SUPPLEMENTARY FILE X, respectively.
+#| fig-cap: Figure 5. Molecular function and gene annotations of genic and intergenic HGT hits, respectively. Genic hits were subset to only include metabolic functions with ≥ 5 occurrences. HGT hits that had no annotation are excluded from this figure. Colors indicate the source for the sseqid hit (e.g., yellow for UniProt sequences and all others for individual bacterial genomes). Intergenic hits were subset to only include annotations with > 0 occurrences. Full metabolic annotations for genic and intergenic HGT analyses can be found in SUPPLEMENTARY FILE X and SUPPLEMENTARY FILE X, respectively.
 #| eval: true
 #| warning: false
 #| error: false
@@ -2055,12 +2184,13 @@ file3_uniprot_prok_hits_eco %>%
   dplyr::rename(annotation = bac_gen_gene_annotation, label = chrm_bac) %>% 
   filter(!Freq == 0) %>% 
     
-  # rbind our uniprot only hits  
+  # rbind our intergenic uniprot only hits  
   rbind(., 
-        (file3_uniprot_prok_hits_eco %>% 
+        (
+          file3_uniprot_prok_hits_eco %>% 
           select(gene_ontology_molecular_function_uniprot_d) %>%
            mutate(gene_ontology_molecular_function_uniprot_d = str_remove_all(gene_ontology_molecular_function_uniprot_d, " \\[GO\\:[:digit:]+\\]")) %>% 
-           table(useNA = "ifany") %>% 
+           table() %>% 
            as.data.frame() %>% 
            # mutate(Var1 = substr(Var1, 1, regexpr(";", Var1, fixed=TRUE)-1)) %>% 
            mutate(annotation = stringi::stri_extract_first_regex(gene_ontology_molecular_function_uniprot_d, "^[^;]+")) %>% 
@@ -2071,15 +2201,17 @@ file3_uniprot_prok_hits_eco %>%
   filter(!Freq == 0) %>% 
   add_column(g_ig = "intergenic") %>% 
   
-    # rbind our Genic hits 
+    # rbind our uniprot Genic hits 
   rbind(.,
-        (hgt_index_output_orth %>% 
+        (
+          hgt_index_output_orth %>% 
           ungroup() %>% 
           filter(grepl("^Psammoneisjap", qseqid)) %>% 
           filter(domain_assignment == "prokaryote"|domain_assignment == "prokaryote_strong") %>% 
+          filter(hgt_class %in% c("A","B","C")) %>% 
           select(gene_ontology_molecular_function_uniprot_d) %>% 
           mutate(gene_ontology_molecular_function_uniprot_d = stringi::stri_extract_first_regex(gene_ontology_molecular_function_uniprot_d, "^[^;]+")) %>% 
-          table(useNA = "ifany") %>% 
+          table() %>% 
           as.data.frame() %>% 
           rename(Var1 = gene_ontology_molecular_function_uniprot_d) %>% 
           mutate(Var1 = str_remove_all(Var1, " \\[GO\\:[:digit:]+\\]")) %>% 
@@ -2088,10 +2220,33 @@ file3_uniprot_prok_hits_eco %>%
           mutate(annotation = forcats::fct_relevel(annotation, sort)) %>% 
           filter(Freq >= 5) %>% 
            add_column(label = "uniprot") %>% 
-          add_column(g_ig = "genic"))) %>% 
+          add_column(g_ig = "genic")
+          )) %>% 
+  # rbind our genic bacteria genome hits
+  rbind(.,
+        (
+          hgt_index_output_orth %>% 
+          filter(grepl("^Psammoneisjap", qseqid)) %>%
+          filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+          filter(hgt_class %in% c("A","B","C")) %>% 
+          select(bac_gen_gene_annotation, bac_genome) %>% 
+          # table(useNA="always") %>% # coerce annotations and annotation origins into a tidy count table, while keeping NA's
+          table() %>% # coerce annotations and annotation origins into a tidy count table, while keeping NA's
+          as.data.frame() %>% 
+          dplyr::rename(annotation = bac_gen_gene_annotation, label = bac_genome) %>% 
+          mutate(annotation = str_remove_all(annotation, " COG3496$|^COG0488\\: |^FIG[:digit:]+\\: | \\(EC [:digit:]+\\.[:digit:]+\\.[:digit:]+\\.+[:digit:]+\\)| \\(EC [:digit:]+\\.[:digit:]+\\.[:digit:]+\\.+\\-\\)")) %>% 
+            mutate(annotation = str_replace_all(annotation, 'Hypothetical protein', 'hypothetical protein')) %>% 
+            mutate(annotation = str_replace_all(annotation, 'Oxidoreductase', 'oxidoreductase activity')) %>% 
+          filter(Freq >= 5) %>% 
+          add_column(g_ig = "genic")
+        )) %>% 
   group_by(annotation, label, g_ig) %>% 
   summarise_each(funs(sum)) %>% 
   ungroup() %>% 
+  group_by(annotation) %>%
+  add_count(annotation)%>% 
+  ungroup() %>% 
+  filter(n >= 1) %>% 
   
   ## Plot it!
   ggplot(aes(y = forcats::fct_rev(annotation), x = Freq, color = label, fill = label)) +
@@ -2119,7 +2274,152 @@ file3_uniprot_prok_hits_eco %>%
     # Change axis line
     axis.line = element_line(colour = "black"),
     # indicate position of legend
-    legend.position = c(.95, .1),
+    legend.position = c(.95, .12),
+    legend.title = element_blank()
+  )
+```
+
+```{r}
+#| label: blast_hit_gene_annotations - bacterial genomes
+#| fig-cap: Figure 5. Molecular function and gene annotations of genic and intergenic HGT hits, respectively. Genic hits were subset to only include metabolic functions with ≥ 5 occurrences. HGT hits that had no annotation are excluded from this figure. Colors indicate the source for the sseqid hit (e.g., yellow for UniProt sequences and all others for individual bacterial genomes). Intergenic hits were subset to only include annotations with > 0 occurrences. Full metabolic annotations for genic and intergenic HGT analyses can be found in SUPPLEMENTARY FILE X and SUPPLEMENTARY FILE X, respectively.
+#| eval: true
+#| warning: false
+#| error: false
+
+
+
+### Genic and intergenic metabolic characteristics of potential HGT hits, faceted by genic/intergenic ###
+file3_uniprot_prok_hits_eco %>% 
+  select(bac_gen_gene_annotation, chrm_bac) %>% 
+  # table(useNA="always") %>% # coerce annotations and annotation origins into a tidy count table, while keeping NA's
+  table() %>% # coerce annotations and annotation origins into a tidy count table, while keeping NA's
+  as.data.frame() %>% 
+  dplyr::rename(annotation = bac_gen_gene_annotation, label = chrm_bac) %>% 
+  filter(!Freq == 0) %>% 
+  add_column(g_ig = "intergenic") %>% 
+    
+  # rbind our genic bacteria genome hits
+  rbind(.,
+        (
+          hgt_index_output_orth %>% 
+          filter(grepl("^Psammoneisjap", qseqid)) %>%
+          filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+          filter(hgt_class %in% c("A","B","C")) %>% 
+          select(bac_gen_gene_annotation, bac_genome) %>% 
+          # table(useNA="always") %>% # coerce annotations and annotation origins into a tidy count table, while keeping NA's
+          table() %>% # coerce annotations and annotation origins into a tidy count table, while keeping NA's
+          as.data.frame() %>% 
+          dplyr::rename(annotation = bac_gen_gene_annotation, label = bac_genome) %>% 
+          mutate(annotation = str_remove_all(annotation, " COG3496$|^COG0488\\: |^FIG[:digit:]+\\: | \\(EC [:digit:]+\\.[:digit:]+\\.[:digit:]+\\.+[:digit:]+\\)| \\(EC [:digit:]+\\.[:digit:]+\\.[:digit:]+\\.+\\-\\)")) %>% 
+            mutate(annotation = str_replace_all(annotation, 'Hypothetical protein', 'hypothetical protein')) %>% 
+            mutate(annotation = str_replace_all(annotation, 'Oxidoreductase', 'oxidoreductase activity')) %>% 
+          filter(Freq >= 1) %>% 
+          add_column(g_ig = "genic") 
+        )) %>% 
+  group_by(annotation, label, g_ig) %>% 
+  summarise_each(funs(sum)) %>% 
+  ungroup() %>% 
+  
+  ## Plot it!
+  ggplot(aes(y = forcats::fct_rev(annotation), x = Freq, fill = g_ig)) +
+  geom_bar(stat = "identity", width = .6) +
+  viridis::scale_color_viridis(discrete=T, begin = 0, end = .95, option = "D") +
+  viridis::scale_fill_viridis(discrete=T, begin = 0, end = .95, option = "D", na.value="black") +
+  # scale_x_continuous(expand = c(0, 0), limits = c(0,190), breaks = c(190, seq(0, 18, by = 2))) +
+  scale_x_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  # scale_y_discrete(labels = scales::label_wrap(10)) +
+  facet_wrap(label~., scales = "free_x", ncol = 4)  + # create faceted plots for the g_ig variable
+  xlab("Frequency") +
+  ylab("") +
+  theme(
+    axis.text.y = element_text(size = 7.5, color = "black"),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(color = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = c(.95, .2),
+    # legend.position = "none",
+    legend.title = element_blank()
+  )
+
+  # rbind our intergenic uniprot only hits  
+file3_uniprot_prok_hits_eco %>% 
+          select(gene_ontology_molecular_function_uniprot_d) %>%
+           mutate(gene_ontology_molecular_function_uniprot_d = str_remove_all(gene_ontology_molecular_function_uniprot_d, " \\[GO\\:[:digit:]+\\]")) %>% 
+           table() %>% 
+           as.data.frame() %>% 
+           # mutate(Var1 = substr(Var1, 1, regexpr(";", Var1, fixed=TRUE)-1)) %>% 
+           mutate(annotation = stringi::stri_extract_first_regex(gene_ontology_molecular_function_uniprot_d, "^[^;]+")) %>% 
+           add_column(label = "uniprot") %>% 
+           select(annotation, label, Freq) %>% 
+  mutate(annotation = forcats::fct_relevel(annotation, sort)) %>% 
+  filter(!Freq == 0) %>% 
+  add_column(g_ig = "intergenic") %>% 
+  
+    # rbind our uniprot Genic hits 
+  rbind(.,
+        (
+          hgt_index_output_orth %>% 
+          ungroup() %>% 
+          filter(grepl("^Psammoneisjap", qseqid)) %>% 
+          filter(domain_assignment == "prokaryote"|domain_assignment == "prokaryote_strong") %>% 
+          filter(hgt_class %in% c("A","B","C")) %>% 
+          select(gene_ontology_molecular_function_uniprot_d) %>% 
+          mutate(gene_ontology_molecular_function_uniprot_d = stringi::stri_extract_first_regex(gene_ontology_molecular_function_uniprot_d, "^[^;]+")) %>% 
+          table() %>% 
+          as.data.frame() %>% 
+          rename(Var1 = gene_ontology_molecular_function_uniprot_d) %>% 
+          mutate(Var1 = str_remove_all(Var1, " \\[GO\\:[:digit:]+\\]")) %>% 
+                   # mutate(Var1 = substr(Var1, 1, regexpr(";", Var1, fixed=TRUE)-1)) %>% 
+          dplyr::rename(annotation = Var1) %>% 
+          mutate(annotation = forcats::fct_relevel(annotation, sort)) %>% 
+          filter(Freq >= 5) %>% 
+           add_column(label = "uniprot") %>% 
+            add_column(g_ig = "genic")
+          )) %>% 
+  
+  group_by(annotation, label, g_ig) %>% 
+  summarise_each(funs(sum)) %>% 
+  ungroup() %>% 
+
+  
+  ## Plot it!
+  ggplot(aes(y = forcats::fct_rev(annotation), x = Freq, color = label, fill = label)) +
+  geom_bar(stat = "identity", width = .6) +
+  viridis::scale_color_viridis(discrete=T, begin = 0, end = .95, option = "D") +
+  viridis::scale_fill_viridis(discrete=T, begin = 0, end = .95, option = "D", na.value="black") +
+  # scale_x_continuous(expand = c(0, 0), limits = c(0,190), breaks = c(190, seq(0, 18, by = 2))) +
+  scale_x_continuous(expand = c(0, 0)) +
+  # scale_y_discrete(labels = scales::label_wrap(10)) +
+  facet_wrap(g_ig~., scales = "free_x")  + # create faceted plots for the g_ig variable
+  xlab("Frequency") +
+  ylab("") +
+  theme(
+    axis.text.y = element_text(size = 7.5, color = "black"),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(color = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = c(.95, .12),
     legend.title = element_blank()
   )
 ```
