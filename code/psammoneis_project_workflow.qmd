@@ -497,14 +497,14 @@ Based on the visualization below, an *h* value cutoff of 30 should be fine.
 file3_uniprot %>%
   ggplot(aes(x = h)) +
   stat_ecdf(geom = "point") +
-  scale_x_continuous(breaks = c(seq(-200, 300, by = 50), 15, 30)) +
+  scale_x_continuous(breaks = c(seq(-200, 300, by = 50), 30), limits = c(-200,300)) +
   xlab("HGT index (<i>h</i>)") +
   ylab("Empirical cumulative distribution of <i>h</i>") +
   theme(
     axis.text.x = element_text(angle = 90, hjust = 1),
     # Hide panel borders and remove grid lines
     panel.border = element_blank(),
-    panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
     panel.grid.major.y = element_blank(),
     panel.grid.minor = element_blank(),
     # Remove panel background
@@ -517,7 +517,8 @@ file3_uniprot %>%
     # indicate position of legend
     legend.position = "none",
     legend.title = element_blank()
-  )
+  ) +
+  geom_vline(xintercept = 30, color = "black", linetype = 3)
 ```
 
 ```{r}
@@ -1254,9 +1255,9 @@ Nannochloropsis gaditana and Ectocarpus siliculosus as outgroups
 
 Wade Roberts then ran Orthofinder on these proteomes using default settings to produce orthologs.
 
-Then, I sorted files to include only lines for orthologs with 'Psammoneis' genes present.
+Then, I sorted files to include only lines for orthologs with 'Psammoneis' genes present. I performed this on a concatenated version of the orthogroups and unassigned gene files so that I would also have singleton genes in there.  
 
-    grep 'Psammoneis' Orthogroups/Orthogroups.tsv > Orthogroups/Orthogroups_Psam_filtered.tsv
+    cat Orthogroups.tsv <(tail -n+2 Orthogroups_UnassignedGenes.tsv) | grep 'Psammoneis' | > Orthogroups_Psam_filtered.tsv
 
 Then I copy the .fa files for those orthogroups to their own folder.
 
@@ -1320,7 +1321,7 @@ Finally, we enter the directory for both donor and recipient output files and ap
 
 
 ```{r}
-#| label: Crsip HGT index classification
+#| label: Crisp HGT index classification
 
 # HGT index
 
@@ -1364,6 +1365,16 @@ orthogroups <-
   as.data.frame() %>% 
   clean_names()
 
+orthogroups_unassigned <- 
+    read_tsv(here::here('data','02_hgt_index','orthofinder_psammoneis_wade','OrthoFinder','Results_May12','Orthogroups','Orthogroups_UnassignedGenes.tsv')) %>% 
+  as.data.frame() %>% 
+  clean_names()
+
+# check that all of the Psammoneis genes are present 
+orthogroups %>% 
+  mutate(psam_gene_count = str_count(psammoneis_japonica, ',')+1) %>% 
+  summarise(psam_gene_total = sum(psam_gene_count))
+
 # read in UniProt information for each sseqid in our blast databases
 uniprot_reviewed <-
   read_tsv(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/uniprot-reviewed_yes.tsv", col_names = T) %>%
@@ -1372,9 +1383,9 @@ uniprot_reviewed <-
 
 # assign the output directories as variables
 donor_directory <-
-  "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/HGT_index_output2/HGT_index_output_donor/"
+  "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/HGT_index_output/HGT_index_output_donor/"
 recipient_directory <-
-  "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/HGT_index_output2/HGT_index_output_recipient/"
+  "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/HGT_index_output/HGT_index_output_recipient/"
 
 # list the files in each directory as a variable
 donors <-
@@ -1398,6 +1409,15 @@ recipient_files <-
   slice(1) %>%
   mutate(orthogroup = str_remove(orthogroup, ".fa.recipient.dmndBlastOut.tsv")) %>% 
   ungroup()
+
+# We will use this to examine what percentage of our class A hits are only to our 0F-3F bacterial genomes
+# and which are also hitting to uniprot hits
+donor_files_all <-
+  bind_rows(lapply(donors, fread)) %>%
+  group_by(qseqid) %>% # group our data by sqeqid
+  mutate(orthogroup = str_remove(orthogroup, ".fa.donor.dmndBlastOut.tsv")) %>% 
+  ungroup()
+
 
 # calculate HGT index per orthogroup (h orth)
 # This needs to be done first because R gets grumpy with you when trying this and everything else in a single, piped command.
@@ -1499,6 +1519,40 @@ rm(uniprot_reviewed, d_r_hOrth, donor_files, recipient_files, recipients, donors
 ```
 
 ```{r}
+#| label: find h-cutoff genic
+#| eval: true
+#| echo: false
+#| warning: false
+#| error: false
+#| output: false
+hgt_index_output_orth %>%
+  ggplot(aes(x = h)) +
+  stat_ecdf(geom = "point") +
+  scale_x_continuous(breaks = c(seq(-200, 300, by = 50), 30), limits = c(-200,300)) +
+  xlab("HGT index (<i>h</i>)") +
+  ylab("Empirical cumulative distribution of <i>h</i>") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "none",
+    legend.title = element_blank()
+  ) +
+  geom_vline(xintercept = 30, color = "black", linetype = 3)
+```
+
+```{r}
 #| label: Genic data summaries and exploration
 #| eval: false
 #| echo: true
@@ -1512,6 +1566,97 @@ hgt_index_output_orth_prok_psam <-
   hgt_index_output_orth %>%
   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
   filter(grepl("^Psammoneisjap", qseqid))
+
+# check out the results for the orthogroups for unassigned genes
+hgt_index_output_orth_prok_psam_unassigned <- 
+  hgt_index_output_orth_prok_psam %>% 
+  filter(orthogroup %in% orthogroups_unassigned$orthogroup)
+
+# We will use this to examine what percentage of our class A hits are only to our 0F-3F bacterial genomes
+# and which are also hitting to uniprot hits
+bac_gen_unqiue_hits_qseqid <- 
+  left_join(
+  (donor_files_all %>% filter(grepl("^Psammoneisjap", qseqid))), 
+   (hgt_index_output_orth_prok_psam %>% filter(hgt_class == 'A')), 
+          by = c("qseqid", "sseqid_d", "orthogroup", "pident_d","length_d","mismatch_d","gapopen_d","qstart_d","qend_d","sstart_d","send_d","evalue_d","bitscore_d")) %>% 
+  select(-c(ends_with("_r"))) %>% 
+  group_by(qseqid) %>%
+  filter(any(!is.na(h))) %>% 
+  filter(any(bac_genome %in% c("0F","1F","2F","3F"))) %>% 
+  select(orthogroup, qseqid, sseqid_d, h, h_orth, hgt_class, chrm_bac) %>% 
+  mutate(total_hits = n()) %>% 
+  ungroup() %>% 
+  group_by(orthogroup) %>% 
+  mutate(qseqid_distinct = n_distinct(qseqid)) %>% 
+  ungroup() %>% 
+  group_by(qseqid) %>% 
+  mutate(genome_pct = sum(str_count(sseqid_d, '[:digit:]+F'))/n()) %>% 
+  arrange(orthogroup, desc(h)) %>% 
+  ungroup()
+  
+
+bac_gen_unqiue_hits_OG <- 
+  left_join(
+  (donor_files_all %>% filter(grepl("^Psammoneisjap", qseqid))), 
+   (hgt_index_output_orth_prok_psam %>% filter(hgt_class == 'A')), 
+          by = c("qseqid", "sseqid_d", "orthogroup", "pident_d","length_d","mismatch_d","gapopen_d","qstart_d","qend_d","sstart_d","send_d","evalue_d","bitscore_d")) %>% 
+  select(-c(ends_with("_r"))) %>% 
+  group_by(orthogroup) %>%
+  filter(any(!is.na(h))) %>% 
+  filter(any(bac_genome %in% c("0F","1F","2F","3F"))) %>% 
+  select(orthogroup, qseqid, sseqid_d, h, h_orth, hgt_class, chrm_bac) %>% 
+  mutate(qseqid_distinct = n_distinct(qseqid)) %>% 
+  mutate(total_hits = n()) %>% 
+  ungroup() %>% 
+  group_by(orthogroup) %>% 
+  mutate(genome_pct = sum(str_count(sseqid_d, '[:digit:]+F'))/n()) %>% 
+  arrange(orthogroup, desc(h)) %>% 
+  ungroup()
+
+# plotting total hits per grouping and percentage of hits to bacterial genomes, faceted by group with boxplot ggside
+rbind(
+(bac_gen_unqiue_hits_qseqid %>% 
+   select(qseqid, total_hits, genome_pct) %>% 
+   unique() %>% 
+   select(-qseqid) %>% 
+   add_column(grouping = "qseqid")
+    ), 
+(bac_gen_unqiue_hits_OG %>% 
+   select(orthogroup, total_hits, genome_pct) %>% 
+   unique() %>% 
+   select(-orthogroup) %>% 
+   add_column(grouping = "OG")
+    ) 
+) %>% 
+  ggplot(aes(x = total_hits, y = genome_pct)) +
+  ggpointdensity::geom_pointdensity() +
+  viridis::scale_color_viridis(begin = 0, end = 0.75) +
+  labs(y="Percentage of hits to bacterial genomes 0F - 3F", 
+       x="Total no. of hits per group") +
+  facet_wrap(~ grouping, ncol = 1, scales = "free", strip.position = "top") +
+  theme(
+    # axis.text.x = element_text(angle = 0, hjust = .5, color = "#000000"),
+    # axis.text.y = element_text(color = "#000000", size = 10),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = c(.75, .2),
+    legend.title = element_blank(),
+    legend.background = element_blank()
+  ) +
+  geom_ysideboxplot(aes(x = genome_pct), orientation = "x", outlier.color = "gray") +
+  geom_xsideboxplot(aes(x = total_hits), orientation = "y", outlier.color = "gray") 
+
 
 # subset to just hits to our bacteria genomes
 hgt_index_output_orth_prok_psam %>% 
@@ -1535,12 +1680,12 @@ hgt_index_output_orth_prok_psam %>%
 filter(hgt_index_output_orth_prok_psam, sseqid_d %in% c("0F.2931","0F.660","0F.766","0F.3987","0F.4510","3F.313","0F.1819")) %>% 
   select(where(~ !(all(is.na(.)) | all(. == "")))) # Drop empty columns
 
-  
 # Psammoneis subset of hits by domain assignment
+# Number of unique orthogroups per domain assignment for psammoneis
 hgt_index_output_orth %>%
   filter(grepl("^Psammoneisjap", qseqid)) %>%
-  select(domain_assignment) %>%
-    table(useNA = "ifany")
+  group_by(domain_assignment) %>% 
+  summarise(cnt = dplyr::n(), unique_orthogroups = length(unique(orthogroup)))
 
 # Class assignments for all hits
  hgt_index_output_orth %>%
@@ -1557,14 +1702,9 @@ hgt_index_output_orth %>%
    as_tibble() %>% 
    dplyr::mutate(bac_genome = replace_na(bac_genome, "uniprot"))
 
-# Number of unique orthogroups per domain assignment
-hgt_index_output_orth %>%
-  filter(grepl("^Psammoneisjap", qseqid)) %>%
-  group_by(domain_assignment) %>% 
-  summarise(cnt = dplyr::n(), unique_orthogroups = length(unique(orthogroup)))
 
  # Domain assignment summaries
-# Domain assignments for prokaryotic hits
+# Domain assignments for prokaryotic hits for psammoneis
     hgt_index_output_orth %>%
   filter(grepl("^Psammoneisjap", qseqid)) %>%
   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
@@ -1592,18 +1732,11 @@ hgt_index_output_orth %>%
   hgt_index_output_orth %>%
   filter(grepl("^Psammoneisjap", qseqid)) %>%
   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
-  filter(bac_genome == "0F" | bac_genome == "1F" | bac_genome == "2F"| bac_genome == "3F") %>%
+  filter(bac_genome %in% c("0F","1F","2F","3F")) %>%
   select(where(~ !(all(is.na(.)) | all(. == "")))) %>% # Drop empty columns
   select(hgt_class) %>%
     table(useNA = "ifany") 
    
-   # Class assignments for all hits   
-   hgt_index_output_orth %>%
-  group_by(hgt_class) %>%
-  summarise(cnt = dplyr::n()) %>%
-  mutate(freq = round(cnt / sum(cnt), 3)) %>%
-  dplyr::arrange(desc(freq))
-
 # class assignments by hit origin
    hgt_index_output_orth %>%
   filter(grepl("^Psammoneisjap", qseqid)) %>%
@@ -1681,9 +1814,16 @@ orthogroups_phaeo_seminavis <-
 # subset orthogroups where psammoneis is the only gene donor
 psam_only_orths <-  
   orthogroups %>% 
-  filter(if_all(orthogroups_psam_cols, ~ is.na(.))) %>% 
+  filter(if_all(all_of(orthogroups_psam_cols), ~ is.na(.))) %>% 
   select(orthogroup, psammoneis_japonica) %>% 
   mutate(gene_count = str_count(psammoneis_japonica, ',')+1)
+
+# see which of our psam only OGs are in our HGT output
+left_join(psam_only_orths, hgt_index_output_orth_prok_psam, by = "orthogroup")%>%
+      filter(bac_genome %in% c("0F","1F","2F","3F")) %>%
+  select(hgt_class) %>%
+    table(useNA = "ifany") %>% 
+   as_tibble() 
 
 # let's see which singleton OGs are in Psammoneis
 # end up with an empty DF, so all of these are not singletons
@@ -1732,7 +1872,7 @@ left_join(hgt_index_output_orth_prok_psam, orthogroups, by = "orthogroup") %>%
    filter(bac_genome %in% c("0F","1F","2F","3F")) %>% 
   filter(orthogroup %in% orthogroups_diatom_only$orthogroup)
 
-# Then we will import Psammoneis CDS sequences from orthofinder and filter them to only the sequences of Class A hits to our nbacterial genome
+# Then we will import Psammoneis CDS sequences from orthofinder and filter them to only the sequences of Class A hits to our bacterial genome
 # We'll then export those and NCBI blastp them to check that the top hit is prokaryotic
 # Psammoneis_only
 qseqs_classA_bacGen <-
