@@ -2026,7 +2026,7 @@ interpro_results <-
            (hgt_index_output_orth_prok_psam %>% filter(bac_genome %in% c("0F","1F","2F","3F")) %>% filter(hgt_class == "A")%>% tibble())$sseqid_d
          )
 
-
+# now let's explore what we've got 
 
 ```
 
