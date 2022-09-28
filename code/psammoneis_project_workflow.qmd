@@ -1655,7 +1655,7 @@ rbind(
     legend.background = element_blank()
   ) +
   geom_ysideboxplot(aes(x = genome_pct), orientation = "x", outlier.color = "gray") +
-  geom_xsideboxplot(aes(x = total_hits), orientation = "y", outlier.color = "gray") q
+  geom_xsideboxplot(aes(x = total_hits), orientation = "y", outlier.color = "gray")
 
 
 # subset to just hits to our bacteria genomes
@@ -1871,6 +1871,15 @@ left_join(hgt_index_output_orth_prok_psam, orthogroups, by = "orthogroup") %>%
 left_join(hgt_index_output_orth_prok_psam, orthogroups, by = "orthogroup") %>% 
    filter(bac_genome %in% c("0F","1F","2F","3F")) %>% 
   filter(orthogroup %in% orthogroups_diatom_only$orthogroup)
+```
+
+```{r}
+#| label: export class A seqs for ncbi blastp analysis
+#| eval: true
+#| echo: false
+#| warning: false
+#| error: false
+#| output: false
 
 # Then we will import Psammoneis CDS sequences from orthofinder and filter them to only the sequences of Class A hits to our bacterial genome
 # We'll then export those and NCBI blastp them to check that the top hit is prokaryotic
@@ -1878,7 +1887,6 @@ left_join(hgt_index_output_orth_prok_psam, orthogroups, by = "orthogroup") %>%
 qseqs_classA_bacGen <-
   left_join(hgt_index_output_orth_prok_psam, orthogroups, by = "orthogroup") %>% 
    filter(bac_genome %in% c("0F","1F","2F","3F")) %>% 
-  filter(orthogroup %in% psam_only_orths$orthogroup) %>% 
   filter(hgt_class == "A") %>% 
   select(qseqid) %>% 
   tibble()
