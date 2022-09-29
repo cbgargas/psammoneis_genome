@@ -1922,7 +1922,9 @@ lapply(psam_CDS_classA_bacgen_split, function(x) {
 
 # read in our csv files from our blast searches
 description_files <-
-  list.files(path = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/orthofinder_psammoneis_wade/classA_bacGen_blastp/", full.names = T, pattern = "^HHR9STDN01R")
+  list.files(path = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/orthofinder_psammoneis_wade/classA_bacGen_blastp/", full.names = T, pattern = "Descriptions")
+HitTable_files <-
+  list.files(path = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/orthofinder_psammoneis_wade/classA_bacGen_blastp/", full.names = T, pattern = "HitTable")
 
 # Here we use fread, lapply, and bind_rows to read in all of our output files and bind them by row (i.e., concatenating them) into a single dataframe for donor and recipient results, respectively.
 descriptions <-
@@ -1930,10 +1932,11 @@ descriptions <-
   mutate(Accession = str_extract(Accession, '[:alnum:]+\\.[:digit:]""\\)$')) %>% 
   mutate(Accession = str_remove(Accession, '""\\)$')) %>% 
   left_join(., 
-            vroom::vroom("/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/orthofinder_psammoneis_wade/classA_bacGen_blastp/HHRUG9Y2013-Alignment-HitTable.csv", col_names = FALSE), 
-            by = c("Accession"="X2")) %>% 
-   group_by(X1) %>% # group our data by sqeqid
-  top_n(1, X4) %>% # select the top blast search result by bitscore for each seq_id
+            (bind_rows(lapply(HitTable_files, fread)) %>% 
+               mutate(V3 = round(V3, digits = 2))), 
+            by = c("Accession"="V2", "Per. ident"="V3")) %>% 
+   group_by(V1) %>% # group our data by sqeqid
+  top_n(1, V12) %>% # select the top blast search result by bitscore for each seq_id
   slice(1) %>%
   # mutate(orthogroup = str_remove(orthogroup, ".fa.donor.dmndBlastOut.tsv")) %>%
   ungroup()
