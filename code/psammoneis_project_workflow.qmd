@@ -1901,11 +1901,24 @@ psam_CDS_classA_bacgen <-
   rename(label = qseqid) %>% 
   mutate(label = paste(">", label, sep = ""))
 
-write.table(psam_CDS_classA_bacgen,
-  sep = "\n",
-  file = "~/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/orthofinder_psammoneis_wade/Psammoneis_japonica_classA_bacGenHits.faa",
-  quote = FALSE, row.names = FALSE, col.names = FALSE
-)
+#split data frame into n equal-sized data frames
+psam_CDS_classA_bacgen_split <- split(psam_CDS_classA_bacgen, factor(sort(rank(row.names(psam_CDS_classA_bacgen))%%10)))
+# Make a counter object so we can generate and change the number of each file as lapply iterates
+counter <- 0
+# split up the psam_CDS_classA_bacgen file into chunks so that ncbi BlastP doesn't throw a fit
+lapply(psam_CDS_classA_bacgen_split, function(x) {
+     counter <<- counter + 1; 
+     write.table(x, 
+                 file = paste("~/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/orthofinder_psammoneis_wade/Psammoneis_japonica_classA_bacGenHits_", 
+                              counter,
+                              ".faa", 
+                              sep = ""),
+                          sep = "\n", 
+                          quote = FALSE, 
+                          row.names = FALSE, 
+                          col.names = FALSE
+                          )}
+   )
 
 # read in our csv files from our blast searches
 description_files <-
