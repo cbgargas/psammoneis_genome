@@ -1934,6 +1934,15 @@ descriptions <-
   left_join(., 
             (bind_rows(lapply(HitTable_files, fread)) %>% 
                mutate(V3 = round(V3, digits = 2))), 
+            by = c("Accession"="V2", "Per. ident"="V3"))
+
+descriptions_sliced <-
+  bind_rows(lapply(description_files, fread)) %>%
+  mutate(Accession = str_extract(Accession, '[:alnum:]+\\.[:digit:]""\\)$')) %>% 
+  mutate(Accession = str_remove(Accession, '""\\)$')) %>% 
+  left_join(., 
+            (bind_rows(lapply(HitTable_files, fread)) %>% 
+               mutate(V3 = round(V3, digits = 2))), 
             by = c("Accession"="V2", "Per. ident"="V3")) %>% 
    group_by(V1) %>% # group our data by sqeqid
   top_n(1, V12) %>% # select the top blast search result by bitscore for each seq_id
@@ -1941,6 +1950,71 @@ descriptions <-
   # mutate(orthogroup = str_remove(orthogroup, ".fa.donor.dmndBlastOut.tsv")) %>%
   ungroup()
 
+# let's create a visualization for how many of our Class A hits to Psammoneis are hitting to Bacteria when we use NCBI blastp
+descriptions_sliced %>% 
+  select("Scientific Name") %>% 
+  mutate(Scientific.Name = str_extract(`Scientific Name`, "[:alpha:]+ [:alpha:]+")) %>% 
+  table() %>% 
+  as.data.frame() %>% 
+  mutate(highlight_flag = str_detect(Scientific.Name, "bacterium$|Blastopirellula|group")) %>% 
+  ggplot() +
+  geom_bar(
+    aes(
+      y = forcats::fct_rev(Scientific.Name), 
+      x = Freq,
+      fill = highlight_flag), 
+    stat = "identity", 
+    width = .6) +
+  scale_fill_manual(name = "Bacteria", values=c("grey50","purple")) +
+  scale_x_continuous(limits = c(0,16), breaks = c(seq(0, 16, by = 2)), expand = c(0,0)) +
+  # scale_y_discrete(labels = scales::wrap_format(10)) +
+  xlab("No. of hits (to 106 Class A sequences)") +
+  ylab("NCBI BlastP top hit") +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = .5, color = "#000000"),
+    axis.text.y = element_text(color = "#000000", size = 8),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = c(.9,.1),
+    legend.title = element_text()
+  )
+
+# Next, let's see which of our bacterial hits are shared between Matt's results and mine
+descriptions_sliced %>% 
+  mutate(Scientific.Name = str_extract(`Scientific Name`, "[:alpha:]+ [:alpha:]+")) %>% 
+  mutate(highlight_flag = str_detect(Scientific.Name, "bacterium$|Blastopirellula|group")) %>% 
+  left_join(
+    filter(hgt_index_output_orth_prok_psam, sseqid_d %in% c("0F.2931","0F.660","0F.766","0F.3987","0F.4510","3F.313","0F.1819")) %>% 
+  select(where(~ !(all(is.na(.)) | all(. == "")))), # Drop empty columns
+  ., by = c("qseqid" = "V1"))
+
+# finally, let's see how it goes for all of our other "Bacterial" hits
+descriptions_sliced %>% 
+  mutate(Scientific.Name = str_extract(`Scientific Name`, "[:alpha:]+ [:alpha:]+")) %>% 
+  mutate(highlight_flag = str_detect(Scientific.Name, "bacterium$|Blastopirellula|group")) %>% 
+  left_join(
+    (hgt_index_output_orth %>%
+       filter(grepl("^Psammoneisjap", qseqid)) %>%
+       filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+       filter(taxonomic_lineage_superkingdom_d == "Bacteria") %>%
+       filter(bac_genome %in% c("0F","1F","2F","3F"))  %>% 
+       filter(hgt_class == "A") %>% 
+       select(where(~ !(all(is.na(.)) | all(. == ""))))), # Drop empty columns
+    ., 
+    by = c("qseqid" = "V1")) %>% 
+  filter(highlight_flag == TRUE) %>% 
+  select(qseqid, sseqid_d, organism_uniprot_d, Scientific.Name, highlight_flag)
 ```
 
 ------------------------------------------------------------------------
