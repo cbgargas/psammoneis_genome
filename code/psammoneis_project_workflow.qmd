@@ -1882,7 +1882,7 @@ left_join(hgt_index_output_orth_prok_psam, orthogroups, by = "orthogroup") %>%
 ```
 
 Finally, we will use NCBI BlastP to check our class A sequences.  
-First, we use the SLURM script 'submit_01_download_ncbi_nr_00_55.slurm' to download the most recent NR blast database and taxonomy database. 
+First, we use the SLURM script 'submit_01_download_ncbi_nr_00_55_pcon06.slurm' to download the most recent NR blast database and taxonomy database. 
 
 Next, we export our class A Psammoneis protein sequences into a FASTA file. 
 
@@ -1933,6 +1933,19 @@ blastn -db nt -num_threads 24 -max_target_seqs 10 -outfmt '6 qseqid sseqid piden
 #| warning: false
 #| error: false
 #| output: false
+
+# One thing we want to do to make things easier is use the prot.accessions2taxid file for assigning sequence origin to our results. Unfortuantely, the full size of this database is >70gb
+# We have two options for dealing with this: 
+# 1) use sqlite database
+# 2) create a parquet file directory to use Arrow to parse our data.
+
+# I created the following sqlite db using the sqlite file browser
+
+# Here, I have set up a workflow to convert our tsv file into a parquet db 
+
+# Below I have set up some functions to time how long each one takes to parse our data and perform functions on it. 
+
+
 # let's create a visualization for how many of our Class A hits to Psammoneis are hitting to Bacteria when we use NCBI blastp
 descriptions_sliced %>% 
   select("Scientific Name") %>% 
