@@ -17,8 +17,16 @@ format:
 #| include: false
 knitr::opts_chunk$set(echo = TRUE)
 
-pacman::p_load(report, skimr, janitor, glue, ggridges, ggdist, ggtext, ggside, GenomicRanges, here, reshape2, tidyverse, patchwork, seqinr, coRdon, data.table, TidyDensity)
-# pacman::p_load(report, skimr, janitor, glue, ggridges, ggdist, ggtext, ggside, GenomicRanges, here, reshape2, tidyverse, tidylog, patchwork, seqinr, coRdon, data.table, TidyDensity)
+pkgs <- c("report", "skimr", "janitor", "glue", "ggridges", "ggdist", "ggtext", "ggside", "GenomicRanges", "here", "reshape2", "tidyverse", "patchwork", "seqinr", "coRdon", "data.table", "TidyDensity") # Names of packages we want to load
+pkgs_tidylog <- c("report", "skimr", "janitor", "glue", "ggridges", "ggdist", "ggtext", "ggside", "GenomicRanges", "here", "reshape2", "tidyverse", "patchwork", "seqinr", "coRdon", "data.table", "TidyDensity", "tidylog") # same as above, but with tidylog if we want more verbose output when using tidy.
+
+pacman::p_load(char = pkgs, install = TRUE, character.only = TRUE) # Load our pacakges
+
+# Load pkgs, plus tidylog
+# pacman::p_load(char = pkgs_tidylog, 
+#                install = TRUE, 
+#                character.only = TRUE)
+
 ```
 
 Note: the full code for all scripts mentioned in this document can be found in the appendix at the end of this RMD file.
@@ -1873,6 +1881,12 @@ left_join(hgt_index_output_orth_prok_psam, orthogroups, by = "orthogroup") %>%
   filter(orthogroup %in% orthogroups_diatom_only$orthogroup)
 ```
 
+Finally, we will use NCBI BlastP to check our class A sequences.  
+First, we use the SLURM script 'submit_01_download_ncbi_nr_00_55.slurm' to download the most recent NR blast database and taxonomy database. 
+
+Next, we export our class A Psammoneis protein sequences into a FASTA file. 
+
+
 ```{r}
 #| label: export class A seqs for ncbi blastp analysis
 #| eval: true
@@ -1884,72 +1898,41 @@ left_join(hgt_index_output_orth_prok_psam, orthogroups, by = "orthogroup") %>%
 # Then we will import Psammoneis CDS sequences from orthofinder and filter them to only the sequences of Class A hits to our bacterial genome
 # We'll then export those and NCBI blastp them to check that the top hit is prokaryotic
 # Psammoneis_only
-qseqs_classA_bacGen <-
+psam_qseqs_classA <-
   left_join(hgt_index_output_orth_prok_psam, orthogroups, by = "orthogroup") %>% 
-   filter(bac_genome %in% c("0F","1F","2F","3F")) %>% 
   filter(hgt_class == "A") %>% 
   select(qseqid) %>% 
   tibble()
 
-psam_CDS <-
-  bioseq::read_fasta(file = "~/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/orthofinder_psammoneis_wade/Psammoneis_japonica.faa", type = "AA")
-
-
-psam_CDS_classA_bacgen <-
+psam_qseqs_classA_seqs <-
   tibble(label = names(psam_CDS), sequence = psam_CDS) %>% 
-  left_join(qseqs_classA_bacGen,., by = c('qseqid' = 'label')) %>% 
+  left_join(qseqs_classA_NONbacGen,., by = c('qseqid' = 'label')) %>% 
   rename(label = qseqid) %>% 
   mutate(label = paste(">", label, sep = ""))
 
-#split data frame into n equal-sized data frames
-psam_CDS_classA_bacgen_split <- split(psam_CDS_classA_bacgen, factor(sort(rank(row.names(psam_CDS_classA_bacgen))%%10)))
-# Make a counter object so we can generate and change the number of each file as lapply iterates
-counter <- 0
-# split up the psam_CDS_classA_bacgen file into chunks so that ncbi BlastP doesn't throw a fit
-lapply(psam_CDS_classA_bacgen_split, function(x) {
-     counter <<- counter + 1; 
-     write.table(x, 
-                 file = paste("~/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/orthofinder_psammoneis_wade/Psammoneis_japonica_classA_bacGenHits_", 
-                              counter,
-                              ".faa", 
-                              sep = ""),
+
+# split up the psam_CDS_classA_NONbacgen file into chunks so that ncbi BlastP doesn't throw a fit
+write.table(psam_qseqs_classA_seqs, 
+                 file = here("data","02_hgt_index","orthofinder_psammoneis_wade","Psammoneis_japonica_classA_seqs.faa"), 
                           sep = "\n", 
                           quote = FALSE, 
                           row.names = FALSE, 
                           col.names = FALSE
-                          )}
-   )
+                          )
+```
 
-# read in our csv files from our blast searches
-description_files <-
-  list.files(path = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/orthofinder_psammoneis_wade/classA_bacGen_blastp/", full.names = T, pattern = "Descriptions")
-HitTable_files <-
-  list.files(path = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/orthofinder_psammoneis_wade/classA_bacGen_blastp/", full.names = T, pattern = "HitTable")
+After we do that, we use them as the query sequences for a BLASTP search using the following command:
+```
+blastn -db nt -num_threads 24 -max_target_seqs 10 -outfmt '6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore sacc staxids sscinames' -query Psammoneis_japonica_classA_seqs.faa
+```
 
-# Here we use fread, lapply, and bind_rows to read in all of our output files and bind them by row (i.e., concatenating them) into a single dataframe for donor and recipient results, respectively.
-descriptions <-
-  bind_rows(lapply(description_files, fread)) %>%
-  mutate(Accession = str_extract(Accession, '[:alnum:]+\\.[:digit:]""\\)$')) %>% 
-  mutate(Accession = str_remove(Accession, '""\\)$')) %>% 
-  left_join(., 
-            (bind_rows(lapply(HitTable_files, fread)) %>% 
-               mutate(V3 = round(V3, digits = 2))), 
-            by = c("Accession"="V2", "Per. ident"="V3"))
-
-descriptions_sliced <-
-  bind_rows(lapply(description_files, fread)) %>%
-  mutate(Accession = str_extract(Accession, '[:alnum:]+\\.[:digit:]""\\)$')) %>% 
-  mutate(Accession = str_remove(Accession, '""\\)$')) %>% 
-  left_join(., 
-            (bind_rows(lapply(HitTable_files, fread)) %>% 
-               mutate(V3 = round(V3, digits = 2))), 
-            by = c("Accession"="V2", "Per. ident"="V3")) %>% 
-   group_by(V1) %>% # group our data by sqeqid
-  top_n(1, V12) %>% # select the top blast search result by bitscore for each seq_id
-  slice(1) %>%
-  # mutate(orthogroup = str_remove(orthogroup, ".fa.donor.dmndBlastOut.tsv")) %>%
-  ungroup()
-
+```{r}
+#| label: import and explore ncbi blastp results
+#| eval: true
+#| echo: false
+#| warning: false
+#| error: false
+#| output: false
 # let's create a visualization for how many of our Class A hits to Psammoneis are hitting to Bacteria when we use NCBI blastp
 descriptions_sliced %>% 
   select("Scientific Name") %>% 
@@ -2015,6 +1998,7 @@ descriptions_sliced %>%
     by = c("qseqid" = "V1")) %>% 
   filter(highlight_flag == TRUE) %>% 
   select(qseqid, sseqid_d, organism_uniprot_d, Scientific.Name, highlight_flag)
+
 ```
 
 ------------------------------------------------------------------------
