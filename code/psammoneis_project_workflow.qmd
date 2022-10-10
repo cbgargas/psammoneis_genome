@@ -17,8 +17,8 @@ format:
 #| include: false
 knitr::opts_chunk$set(echo = TRUE)
 
-pkgs <- c("report", "skimr", "janitor", "glue", "ggridges", "ggdist", "ggtext", "ggside", "GenomicRanges", "here", "reshape2", "tidyverse", "patchwork", "seqinr", "coRdon", "data.table", "TidyDensity") # Names of packages we want to load
-pkgs_tidylog <- c("report", "skimr", "janitor", "glue", "ggridges", "ggdist", "ggtext", "ggside", "GenomicRanges", "here", "reshape2", "tidyverse", "patchwork", "seqinr", "coRdon", "data.table", "TidyDensity", "tidylog") # same as above, but with tidylog if we want more verbose output when using tidy.
+pkgs <- c("report", "skimr", "janitor", "glue", "ggridges", "ggdist", "ggtext", "ggside", "GenomicRanges", "here", "reshape2", "tidyverse", "patchwork", "seqinr", "coRdon", "data.table", "TidyDensity", "arrow", "RSQLite") # Names of packages we want to load
+pkgs_tidylog <- c("report", "skimr", "janitor", "glue", "ggridges", "ggdist", "ggtext", "ggside", "GenomicRanges", "here", "reshape2", "tidyverse", "patchwork", "seqinr", "coRdon", "data.table", "TidyDensity", "arrow", "RSQLite", "tidylog") # same as above, but with tidylog if we want more verbose output when using tidy.
 
 pacman::p_load(char = pkgs, install = TRUE, character.only = TRUE) # Load our pacakges
 
@@ -1882,7 +1882,7 @@ left_join(hgt_index_output_orth_prok_psam, orthogroups, by = "orthogroup") %>%
 ```
 
 Finally, we will use NCBI BlastP to check our class A sequences.  
-First, we use the SLURM script 'submit_01_download_ncbi_nr_00_55_pcon06.slurm' to download the most recent NR blast database and taxonomy database. 
+First, we use the SLURM script 'submit_01_download_ncbi_nr_db.slurm' to download the most recent NR blast database and taxonomy database. 
 
 Next, we export our class A Psammoneis protein sequences into a FASTA file. 
 
@@ -1926,6 +1926,14 @@ After we do that, we use them as the query sequences for a BLASTP search using t
 blastn -db nt -num_threads 24 -max_target_seqs 10 -outfmt '6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore sacc staxids sscinames' -query Psammoneis_japonica_classA_seqs.faa
 ```
 
+After NCBI BlastP runs, we also download the prot.accession2taxid files from [NCBI](https://ftp.ncbi.nih.gov/pub/taxonomy/accession2taxid/)
+We extract the contents of the .gz files and join them using the following one-liner in the terminal. Because I am using zsh, We use the (n) to sort our files numerically.  
+
+```
+head -n1 prot.accession2taxid.FULL.1 > prot.accession2taxid.FULL.2022-10-09.tsv; for fname in prot.accession2taxid.FULL.*; do tail -n+2 $fname >> prot.accession2taxid.FULL.2022-10-09.tsv; done
+```
+
+
 ```{r}
 #| label: import and explore ncbi blastp results
 #| eval: true
@@ -1934,7 +1942,7 @@ blastn -db nt -num_threads 24 -max_target_seqs 10 -outfmt '6 qseqid sseqid piden
 #| error: false
 #| output: false
 
-# One thing we want to do to make things easier is use the prot.accessions2taxid file for assigning sequence origin to our results. Unfortuantely, the full size of this database is >70gb
+# One thing we want to do to make things easier is use the prot.accessions2taxid file for assigning sequence origin to our results. Unfortuantely, the full size of this database is >86gb
 # We have two options for dealing with this: 
 # 1) use sqlite database
 # 2) create a parquet file directory to use Arrow to parse our data.
@@ -1942,6 +1950,20 @@ blastn -db nt -num_threads 24 -max_target_seqs 10 -outfmt '6 qseqid sseqid piden
 # I created the following sqlite db using the sqlite file browser
 
 # Here, I have set up a workflow to convert our tsv file into a parquet db 
+ 
+tsv_file_dir <- "~/local/ncbi/prot.accession2taxid.FULL_2022-10-09_tsvs"
+dest <- "~/local/ncbi/prot.accession2taxid.FULL_2022-10-09_parquet/" 
+
+sch = arrow::schema(accession.ver = string(),
+                    taxid = numeric())
+
+csv_stream <- open_dataset(tsv_file_dir, format = "tsv", 
+                           schema = sch, skip_rows = 1)
+
+write_dataset(csv_stream, dest, format = "parquet", 
+              max_rows_per_file=1000000L,
+              hive_style = TRUE,
+              existing_data_behavior = "overwrite")
 
 # Below I have set up some functions to time how long each one takes to parse our data and perform functions on it. 
 
