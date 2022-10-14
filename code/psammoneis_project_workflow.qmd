@@ -1895,19 +1895,24 @@ Next, we export our class A Psammoneis protein sequences into a FASTA file.
 #| error: false
 #| output: false
 
-# Then we will import Psammoneis CDS sequences from orthofinder and filter them to only the sequences of Class A hits to our bacterial genome
+
+
+# We will import Psammoneis CDS sequences from orthofinder and filter them to only the sequences of Class A hits to our bacterial genome
+psam_CDS <-
+  bioseq::read_fasta(file = here("data","02_hgt_index","orthofinder_psammoneis_wade","Psammoneis_japonica.faa"), type = "AA")
+
 # We'll then export those and NCBI blastp them to check that the top hit is prokaryotic
 # Psammoneis_only
 psam_qseqs_classA <-
-  left_join(hgt_index_output_orth_prok_psam, orthogroups, by = "orthogroup") %>% 
+  hgt_index_output_orth_prok_psam %>% 
   filter(hgt_class == "A") %>% 
   select(qseqid) %>% 
   tibble()
 
+# now we filter the Psammoneis CDS seqs with the class A qseqids
 psam_qseqs_classA_seqs <-
   tibble(label = names(psam_CDS), sequence = psam_CDS) %>% 
-  left_join(qseqs_classA_NONbacGen,., by = c('qseqid' = 'label')) %>% 
-  rename(label = qseqid) %>% 
+  filter(label %in% psam_qseqs_classA$qseqid) %>% 
   mutate(label = paste(">", label, sep = ""))
 
 
@@ -1926,11 +1931,13 @@ After we do that, we use them as the query sequences for a BLASTP search using t
 blastn -db nt -num_threads 24 -max_target_seqs 10 -outfmt '6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore sacc staxids sscinames' -query Psammoneis_japonica_classA_seqs.faa
 ```
 
+One important step to note, to have blast output with staxids and sscinames, we need the taxdb files from NCBI. Those files must be located in the directory from which you initiate the blast command, NOT the directory the blast DB is located in.
+
 After NCBI BlastP runs, we also download the prot.accession2taxid files from [NCBI](https://ftp.ncbi.nih.gov/pub/taxonomy/accession2taxid/)
-We extract the contents of the .gz files and join them using the following one-liner in the terminal. Because I am using zsh, We use the (n) to sort our files numerically.  
+We extract the contents of the .gz files and join them using the following one-liner in the terminal. First, we concatenate all of the extracted prot.accession2taxid.FULL tsv files, then pipe that to grep, where we use the -v option to get the inverse match to taxid. This will remove all of the header lines from our output. Finally the output from grep is directed to our final file, prot.accession2taxid.FULL.2022-10-09.tsv.
 
 ```
-head -n1 prot.accession2taxid.FULL.1 > prot.accession2taxid.FULL.2022-10-09.tsv; for fname in prot.accession2taxid.FULL.*; do tail -n+2 $fname >> prot.accession2taxid.FULL.2022-10-09.tsv; done
+cat prot.accession2taxid.FULL.* | grep -v 'taxid' > prot.accession2taxid.FULL.2022-10-09.tsv
 ```
 
 ```{r}
@@ -1940,15 +1947,15 @@ head -n1 prot.accession2taxid.FULL.1 > prot.accession2taxid.FULL.2022-10-09.tsv;
 #| warning: false
 #| error: false
 #| output: false
+#| 
 # One thing we want to do to make things easier is use the prot.accessions2taxid file for assigning sequence origin to our results. Unfortuantely, the full size of this database is >86gb
 # We have two options for dealing with this: 
-# 1) use sqlite database
+# 1) use an sqlite database
 # 2) create a parquet file directory to use Arrow to parse our data.
 
-# I created the following sqlite db using the sqlite file browser
+# I opted for the parquet database because operations are a bit faster and the size of the parquet files is much smaller at ~30gb. 
 
 # Here, I have set up a workflow to convert our tsv file into a parquet db 
- 
 tsv_file_dir <- "~/local/ncbi/prot.accession2taxid.FULL_2022-10-09_tsvs"
 dest <- "~/local/ncbi/prot.accession2taxid.FULL_2022-10-09_parquet/" 
 
@@ -2009,43 +2016,108 @@ blastp_results_joined <-
   collect()),
   by = c("acc.ver" = "accession.ver")
   ) %>% 
-  left_join(., taxid_categories, by = 'taxid') # Join our taxid_categories file to the above
+  left_join(., taxid_categories, by = 'taxid')  # Join our taxid_categories file to the above
 
-
-
-
-
+# looking at our group composition for each qseqid and it's blastp hits
+  blastp_results_joined %>% 
+    group_by(qseqid, category_expanded) %>% 
+    select(qseqid, category_expanded) %>% 
+    table() %>% 
+    as.data.frame() %>% 
+    pivot_wider(names_from = category_expanded, values_from = Freq) %>% 
+    mutate( # no we make a column to calculate the percentage of hits to each qseqid that are bacgterial/archaeal
+    perc_arc = Archaea/rowSums(select(., contains(c("Arc","Bac","Euk")))),
+    perc_bac = Bacteria/rowSums(select(., contains(c("Arc","Bac","Euk")))),
+    perc_euk = Eukaryota/rowSums(select(., contains(c("Arc","Bac","Euk"))))
+    ) %>% 
+    select(-c(Archaea, Bacteria, Eukaryota)) %>% 
+    rename(
+      Archaea = perc_arc,
+      Bacteria = perc_bac,
+      Eukaryota = perc_euk) %>% 
+    pivot_longer(
+      cols = starts_with(c("Arc","Bac","Euk")),
+      names_to = "percent_groups",
+      values_to = "percentage",
+      values_drop_na = TRUE
+      ) %>% 
+    ggplot(aes(x = percentage, y = forcats::fct_rev(percent_groups), fill = percent_groups)) +
+    stat_slab(scale = 0.7, normalize = "groups") +
+    stat_halfeye(stroke = 1, point_color = "grey50", interval_color = "grey75", side = "top", scale = 0.7, slab_size = NA, layout = "swarm") +
+    viridis::scale_fill_viridis(discrete=T) +
+    scale_x_continuous(limits = c(0,1), breaks = c(seq(0, 1, by = .25))) +
+    xlab("Percentage") +
+    ylab("") +
+    theme(
+      axis.text.x = element_text(angle = 0, hjust = .5, color = "#000000"),
+      axis.text.y = element_text(color = "#000000", size = 10),
+      # Hide panel borders and remove grid lines
+      panel.border = element_blank(),
+      # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor = element_blank(),
+      # Remove panel background
+      panel.background = element_blank(),
+      # remove unnecessary text
+      axis.title.y = element_markdown(),
+      axis.title.x = element_markdown(),
+      # Change axis line
+      axis.line = element_line(colour = "black"),
+      # indicate position of legend
+      legend.position = "none",
+      legend.title = element_blank()
+    )
+  
+#
+df <-
+  blastp_results_joined %>% 
   group_by(qseqid) %>% # group our data by sqeqid
-  top_n(1, bitscore_r) %>% # select the top blast search result by bitscore for each seq_id
+  top_n(1, bitscore) %>% # select the top blast search result by bitscore for each seq_id
   dplyr::slice(1) %>%
-  ungroup()
-
-
-
-# Below I have set up some functions to time how long each one takes to parse our data and perform functions on it. 
-
+  ungroup() %>% 
+  left_join(., hgt_index_output_orth_prok_psam, by = "qseqid") %>% 
+  filter(chrm_bac %in% c("0F","1F","2F","3F")) %>% 
+  left_join(., 
+            (blastp_results_joined %>% 
+    group_by(qseqid, category_expanded) %>% 
+    select(qseqid, category_expanded) %>% 
+    table() %>% 
+    as.data.frame() %>% 
+    pivot_wider(names_from = category_expanded, values_from = Freq) %>% 
+    mutate( # no we make a column to calculate the percentage of hits to each qseqid that are bacgterial/archaeal
+    perc_bac = Bacteria/rowSums(select(., contains(c("Bacteria","Eukaryota")))),
+    perc_euk = Eukaryota/rowSums(select(., contains(c("Bacteria","Eukaryota"))))
+    ) %>% 
+    select(-c(Bacteria, Eukaryota)) %>% 
+    rename(
+      Bacteria = perc_bac,
+      Eukaryota = perc_euk)),
+    by = "qseqid") %>% 
+    pivot_longer(
+      cols = contains(c("Bacteria","Eukaryota")),
+      names_to = "percent_groups",
+      values_to = "percentage",
+      values_drop_na = TRUE
+      ) 
 
 # let's create a visualization for how many of our Class A hits to Psammoneis are hitting to Bacteria when we use NCBI blastp
 blastp_results_joined %>% 
   select("category_expanded") %>% 
   table() %>% 
   as.data.frame() %>% 
-  ggplot() +
-  geom_bar(
-    aes(
+  ggplot(aes(
       y = forcats::fct_rev(category_expanded), 
-      x = Freq,
-      ), 
-    stat = "identity", 
-    width = .6) +
-  scale_fill_manual(name = "Bacteria", values=c("grey50","purple")) +
-  scale_x_continuous(limits = c(0,16), breaks = c(seq(0, 16, by = 2)), expand = c(0,0)) +
+      x = Freq)) +
+  geom_col(fill = "#360c5b") +
+  scale_x_continuous(breaks = c(seq(0, 4250, by = 250), 100), expand = c(0,0)) +
+  # coord_cartesian(xlim=c(0, 1000)) +
+  geom_text(aes(label = Freq), nudge_x = c(100, 150,-200), colour = c("black", "black", "white")) + 
   # scale_y_discrete(labels = scales::wrap_format(10)) +
   xlab("No. of hits (to 106 Class A sequences)") +
-  ylab("NCBI BlastP top hit") +
+  ylab("NCBI BlastP hits") +
   theme(
-    axis.text.x = element_text(angle = 0, hjust = .5, color = "#000000"),
-    axis.text.y = element_text(color = "#000000", size = 8),
+    axis.text.x = element_text(angle = 45, hjust = 1, color = "#000000", face = "bold"),
+    axis.text.y = element_text(color = "#000000", size = 12),
     # Hide panel borders and remove grid lines
     panel.border = element_blank(),
     # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
@@ -2059,35 +2131,144 @@ blastp_results_joined %>%
     # Change axis line
     axis.line = element_line(colour = "black"),
     # indicate position of legend
-    legend.position = c(.9,.1),
+    legend.position = "none",
     legend.title = element_text()
   )
 
+blastp_results_joined %>% 
+  group_by(qseqid) %>% # group our data by sqeqid
+  top_n(1, bitscore) %>% # select the top blast search result by bitscore for each seq_id
+  dplyr::slice(1) %>%
+  ungroup() %>% 
+  select("category_expanded") %>% 
+  table() %>% 
+  as.data.frame() %>% 
+  ggplot(aes(
+      y = forcats::fct_rev(category_expanded), 
+      x = Freq)) +
+  geom_col(fill = "#360c5b") +
+  scale_x_continuous(limits = c(0,450), breaks = c(seq(0, 450, by = 50)), expand = c(0,0)) +
+  geom_text(aes(label = Freq), nudge_x = c(5, 8, -20), colour = c("black", "black", "white")) + 
+  # scale_y_discrete(labels = scales::wrap_format(10)) +
+  xlab("No. of hits (to all Class A sequences)") +
+  ylab("NCBI BlastP hits") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, color = "#000000", face = "bold"),
+    axis.text.y = element_text(color = "#000000", size = 12),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "none",
+    legend.title = element_text()
+  )
+
+# Class A Psamm hits
+blastp_results_joined %>% 
+  group_by(qseqid) %>% # group our data by sqeqid
+  top_n(1, bitscore) %>% # select the top blast search result by bitscore for each seq_id
+  dplyr::slice(1) %>%
+  ungroup() %>% 
+  left_join(., hgt_index_output_orth_prok_psam, by = "qseqid") %>% 
+  filter(chrm_bac %in% c("0F","1F","2F","3F")) %>% 
+  select("category_expanded") %>% 
+  table() %>% 
+  as.data.frame() %>% 
+  ggplot(aes(
+      y = forcats::fct_rev(category_expanded), 
+      x = Freq)) +
+  geom_col(fill = "#360c5b") +
+  scale_x_continuous(limits = c(0,100), breaks = c(seq(0, 100, by = 25)), expand = c(0,0)) +
+  geom_text(aes(label = Freq), nudge_x = c(3, 3), colour = c("black", "black")) + 
+  # scale_y_discrete(labels = scales::wrap_format(10)) +
+  xlab("No. of 0F-3 Fhits (Class A sequences)") +
+  ylab("NCBI BlastP hits") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, color = "#000000", face = "bold"),
+    axis.text.y = element_text(color = "#000000", size = 12),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    axis.title.y = element_markdown(),
+    axis.title.x = element_markdown(),
+    # Change axis line
+    axis.line = element_line(colour = "black"),
+    # indicate position of legend
+    legend.position = "none",
+    legend.title = element_text()
+  )
+
+
+
+df %>% 
+ggplot(aes(x = percentage, y = forcats::fct_rev(percent_groups), fill = percent_groups)) +
+    stat_slab(scale = 0.7, normalize = "groups") +
+    stat_halfeye(stroke = 1, point_color = "grey50", interval_color = "grey75", side = "top", scale = 0.7, slab_size = NA, layout = "swarm") +
+    viridis::scale_fill_viridis(discrete=T) +
+    scale_x_continuous(limits = c(0,1), breaks = c(seq(0, 1, by = .25))) +
+    xlab("Percentage") +
+    ylab("") +
+    theme(
+      axis.text.x = element_text(angle = 0, hjust = .5, color = "#000000"),
+      axis.text.y = element_text(color = "#000000", size = 10),
+      # Hide panel borders and remove grid lines
+      panel.border = element_blank(),
+      # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor = element_blank(),
+      # Remove panel background
+      panel.background = element_blank(),
+      # remove unnecessary text
+      axis.title.y = element_markdown(),
+      axis.title.x = element_markdown(),
+      # Change axis line
+      axis.line = element_line(colour = "black"),
+      # indicate position of legend
+      legend.position = "none",
+      legend.title = element_blank()
+    )
+
 # Next, let's see which of our bacterial hits are shared between Matt's results and mine
-descriptions_sliced %>% 
-  mutate(Scientific.Name = str_extract(`Scientific Name`, "[:alpha:]+ [:alpha:]+")) %>% 
-  mutate(highlight_flag = str_detect(Scientific.Name, "bacterium$|Blastopirellula|group")) %>% 
+blastp_results_joined %>% 
+  group_by(qseqid) %>% # group our data by sqeqid
+  top_n(1, bitscore) %>% # select the top blast search result by bitscore for each seq_id
+  dplyr::slice(1) %>%
+  ungroup() %>% 
   left_join(
     filter(hgt_index_output_orth_prok_psam, sseqid_d %in% c("0F.2931","0F.660","0F.766","0F.3987","0F.4510","3F.313","0F.1819")) %>% 
   select(where(~ !(all(is.na(.)) | all(. == "")))), # Drop empty columns
-  ., by = c("qseqid" = "V1"))
+  ., by = "qseqid")
 
-# finally, let's see how it goes for all of our other "Bacterial" hits
-descriptions_sliced %>% 
-  mutate(Scientific.Name = str_extract(`Scientific Name`, "[:alpha:]+ [:alpha:]+")) %>% 
-  mutate(highlight_flag = str_detect(Scientific.Name, "bacterium$|Blastopirellula|group")) %>% 
+# finally, let's see how it goes for all of our other "class A" hits
+df <- 
   left_join(
-    (hgt_index_output_orth %>%
-       filter(grepl("^Psammoneisjap", qseqid)) %>%
-       filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
-       filter(taxonomic_lineage_superkingdom_d == "Bacteria") %>%
-       filter(bac_genome %in% c("0F","1F","2F","3F"))  %>% 
-       filter(hgt_class == "A") %>% 
-       select(where(~ !(all(is.na(.)) | all(. == ""))))), # Drop empty columns
-    ., 
-    by = c("qseqid" = "V1")) %>% 
-  filter(highlight_flag == TRUE) %>% 
-  select(qseqid, sseqid_d, organism_uniprot_d, Scientific.Name, highlight_flag)
+      (hgt_index_output_orth %>%
+         filter(grepl("^Psammoneisjap", qseqid)) %>%
+         filter(hgt_class == "A") %>% 
+         select(where(~ !(all(is.na(.)) | all(. == ""))))), # Drop empty columns
+      
+      (blastp_results_joined %>%
+         group_by(qseqid) %>% # group our data by sqeqid
+         top_n(1, bitscore) %>% # select the top blast search result by bitscore for each seq_id
+         dplyr::slice(1) %>%
+         ungroup()), 
+      
+      by = "qseqid") %>% 
+  select(qseqid, sseqid_d, organism_uniprot_d, category_expanded)
 
 ```
 
