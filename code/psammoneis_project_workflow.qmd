@@ -2045,6 +2045,11 @@ blastp_results_joined <-
             by = "qseqid")
 
 # Next let's make a stacked bar plot to clarify the composition of our top 10 blast hits and the top hit that each qseqid hit to
+# New labels for facets
+# New facet label names for supp variable
+supp.labs <- c("Top hit to Archaea", "Top hit to Bacteria", "Top hit to Eukaryota")
+names(supp.labs) <- c("Archaea", "Bacteria", "Eukaryota")
+# plot it! 
   blastp_results_joined %>% 
     group_by(qseqid) %>% 
     top_n(10, bitscore) %>% 
@@ -2109,7 +2114,7 @@ blastp_results_joined <-
       legend.position = "bottom",
       legend.title = element_text()
     ) +
-  facet_wrap(~ top_hit, scales = "free", ncol = 1)
+  facet_wrap(~ top_hit, scales = "free", ncol = 1, labeller = labeller(top_hit = supp.labs))
 
 ```
 
