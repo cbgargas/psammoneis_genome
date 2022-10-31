@@ -2028,7 +2028,7 @@ blastp_results_joined <-
   collect()),
   by = c("acc.ver" = "accession.ver")
   ) %>% 
-  left_join(., taxid_categories, by = "taxid") %>%  # Join our taxid_categories file to the above
+  left_join(., taxid_categories, by = "taxid") # Join our taxid_categories file to the above
   # Go thorugh and label NAs with taxonomy categories
   
 blastp_results_joined <- 
@@ -2049,8 +2049,16 @@ blastp_results_joined <-
 # New facet label names for supp variable
 supp.labs <- c("Top hit to Archaea", "Top hit to Bacteria", "Top hit to Eukaryota")
 names(supp.labs) <- c("Archaea", "Bacteria", "Eukaryota")
-# plot it! 
-  blastp_results_joined %>% 
+
+  # plot it but with just our 106 class A proteins that hit to psammoneis! 
+    left_join(
+      (hgt_index_output_orth %>%
+         filter(grepl("^Psammoneisjap", qseqid)) %>%
+         filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+         filter(bac_genome %in% c("0F","1F","2F","3F")) %>% 
+         filter(hgt_class == "A")),
+      blastp_results_joined,
+      by = 'qseqid') %>% 
     group_by(qseqid) %>% 
     top_n(10, bitscore) %>% 
     slice_head(n = 10) %>% 
@@ -2115,6 +2123,50 @@ names(supp.labs) <- c("Archaea", "Bacteria", "Eukaryota")
       legend.title = element_text()
     ) +
   facet_wrap(~ top_hit, scales = "free", ncol = 1, labeller = labeller(top_hit = supp.labs))
+
+# let's look at our 17 sequences that made it through NCBI bastP search as bacterial in origin.
+left_join(
+      (hgt_index_output_orth %>%
+         filter(grepl("^Psammoneisjap", qseqid)) %>%
+         filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+         filter(bac_genome %in% c("0F","1F","2F","3F")) %>% 
+         filter(hgt_class == "A")),
+      blastp_results_joined,
+      by = 'qseqid') %>% 
+    group_by(qseqid) %>% 
+    top_n(10, bitscore) %>% 
+    slice_head(n = 10) %>% 
+    ungroup() %>% 
+    select(qseqid, category_expanded) %>% 
+    table() %>% 
+    as.data.frame() %>% 
+    pivot_wider(names_from = category_expanded, values_from = Freq) %>% 
+    mutate( # now we make a column to calculate the total hits to each qseqid
+    total_hits = rowSums(select(., contains(c("Arc","Bac","Euk"))))
+    # perc_arc = Archaea/total_hits,
+    # perc_bac = Bacteria/total_hits,
+    # perc_euk = Eukaryota/total_hits
+    ) %>% 
+    left_join(
+      ., 
+      (blastp_results_joined %>% 
+        group_by(qseqid) %>% # group our data by sqeqid
+        top_n(1, bitscore) %>% # select the top blast search result by bitscore for each seq_id
+        dplyr::slice(1) %>%
+        ungroup() %>% 
+        select(qseqid, category_expanded) %>% 
+        rename(top_hit = category_expanded)),
+      by = 'qseqid') %>% 
+  rename(archaea_blastp_total_hits = Archaea, 
+         bacteria_blastp_total_hits = Bacteria, 
+         eukaryota_blastp_total_hits = Eukaryota, 
+         total_hits_blastp = total_hits, 
+         top_hit_domain_blastp = top_hit) %>% 
+  left_join(., 
+            (hgt_index_output_orth_prok_psam %>% 
+               select(qseqid, hgt_class, chrm_bac, bac_gen_peg, h, h_orth)),
+            by = 'qseqid') 
+
 
 ```
 
