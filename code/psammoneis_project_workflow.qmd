@@ -2163,7 +2163,7 @@ blastp_results_final <-
       (hgt_index_output_orth %>%
          filter(grepl("^Psammoneisjap", qseqid)) %>%
          filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
-         # filter(bac_genome %in% c("0F","1F","2F","3F")) %>% 
+         filter(bac_genome %in% c("0F","1F","2F","3F")) %>%
          filter(hgt_class == "A")),
       blastp_results_joined,
       by = 'qseqid') %>% 
@@ -2200,7 +2200,26 @@ blastp_results_final <-
                select(qseqid, chrm_bac, bac_gen_peg, hgt_class, h, h_orth)),
             by = 'qseqid') 
 
+# Investigate those sequences that have a top hit to Eukaryota but also hit to bacteria.
+
 # now let's add columns to highlight which sequences had only hits to bacterial genomes, those that only the top hit is to our bacterial genomes, and a column to indicate those that did not hit to our bacterial genomes
+# You'll need to refer back to your original crisp HGT output file and filter by the IDs that are in the blastp_final DF.
+
+# assign the output directories as variables
+donor_directory <-
+  "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/HGT_index_output/HGT_index_output_donor/"
+# list the files in each directory as a variable
+donors <-
+  list.files(path = donor_directory, full.names = T)
+# Here we use fread, lapply, and bind_rows to read in all of our output files and bind them by row (i.e., concatenating them) into a single dataframe for donor and recipient results, respectively.
+donor_files_unsliced <-
+  bind_rows(lapply(donors, fread)) %>%
+  mutate(orthogroup = str_remove(orthogroup, ".fa.donor.dmndBlastOut.tsv")) %>% 
+  filter(qseqid %in% blastp_results_final$qseqid) %>% 
+  group_by(qseqid) %>% 
+  # now we will count the number of hits per qseqid, 
+  # then mutate a new column to show the percentage of hits to our bacterial genomes
+
 
 ```
 
