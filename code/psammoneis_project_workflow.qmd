@@ -1523,6 +1523,12 @@ hgt_index_output_orth <-
              str_detect(sseqid_d, '3F\\.[:digit:]') ~ "3F"
            ))
 
+# prokaryotic subset of hits
+hgt_index_output_orth_prok_psam <-
+  hgt_index_output_orth %>%
+  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+  filter(grepl("^Psammoneisjap", qseqid))
+
 rm(uniprot_reviewed, d_r_hOrth, donor_files, recipient_files, recipients, donors, donor_directory, recipient_directory)
 ```
 
@@ -1568,12 +1574,6 @@ hgt_index_output_orth %>%
 #| error: false
 #| output: false
 
-
-# prokaryotic subset of hits
-hgt_index_output_orth_prok_psam <-
-  hgt_index_output_orth %>%
-  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
-  filter(grepl("^Psammoneisjap", qseqid))
 
 # check out the results for the orthogroups for unassigned genes
 hgt_index_output_orth_prok_psam_unassigned <- 
@@ -1969,6 +1969,28 @@ write_dataset(csv_stream, dest, format = "parquet",
               max_rows_per_file=1000000L,
               hive_style = TRUE,
               existing_data_behavior = "overwrite")
+
+# Convert our gff tsv file to a parquet file
+tsv_file <- here("data","01_psam_intergenic_HGT_index","psam_genome","psamm_final.round4.all.gff_filtered.tsv")
+dest <- here("data","01_psam_intergenic_HGT_index","psam_genome","psamm_final.round4.all.gff_parquet")
+
+sch <-  arrow::schema(seqname = string(),
+                      source = string(),
+                      feature = string(),
+                      start = numeric(),
+                      end = numeric(),
+                      score = string(),
+                      strand = string(),
+                      frame = string(),
+                      attribute = string())
+
+tsv_stream <- open_dataset(tsv_file, format = "tsv", 
+                           schema = sch, skip_rows = 0)
+
+write_dataset(tsv_stream, dest, format = "parquet", 
+              max_rows_per_file=1000000L,
+              hive_style = TRUE,
+              existing_data_behavior = "overwrite")
 ```
 
 
@@ -1980,17 +2002,31 @@ write_dataset(csv_stream, dest, format = "parquet",
 #| error: false
 #| output: false
 
-# Read in our psammoneis gff file
-psam_gff <-
-  read_tsv(here("data","01_psam_intergenic_HGT_index","psam_genome","psamm_final.round4.all.gff"), comment = "#", col_names = c("seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attribute")) %>% 
-mutate(
-  id = case_when(
-    str_detect() ~ str_extract()
-  ),
-  name = case_when(
-    str_detect() ~ str_extract()
-  )
-)
+
+# open our arrow datasets
+prot.accession2taxid <- 
+  open_dataset("/Users/cbg/local/ncbi/prot.accession2taxid.FULL_2022-10-09_parquet")
+
+psam_gff <- 
+  open_dataset(here("data","01_psam_intergenic_HGT_index","psam_genome","psamm_final.round4.all.gff_parquet"))
+
+
+# filter psam_gff by mRNA to get coords for our pdammoneis proteome (that we used in orthofinder)
+psam_gff_proteome <- 
+  psam_gff %>% 
+  filter(feature == "mRNA") %>% 
+  collect()
+
+# filter the above
+psam_gff_filtered <- 
+psam_gff_proteome %>% 
+  mutate(id = str_remove_all(attribute, paste(c("^ID=", "\\;.+$","\\:.+$"), collapse = "|"))) %>%
+  select(-attribute) %>% 
+  filter(id %in% # filter our gff file by ids from our HGT index output
+           (hgt_index_output_orth_prok_psam %>% # remove psamjap from qseqids for filtering of gff parquet
+            mutate(id = str_remove(qseqid, "^Psammoneisjap_")) %>% 
+            select(id))$id) %>% 
+  mutate(qseqid = paste("Psammoneisjap_", id, collapse = ""))
 
 # Read in the NCBI BlastP results
 blastp_results <-
@@ -2015,9 +2051,6 @@ taxid_categories <-
   category == "O" ~ "Other"
   ))
 
-# open our arrow dataset
-prot.accession2taxid <- 
-  open_dataset("/Users/cbg/local/ncbi/prot.accession2taxid.FULL_2022-10-09_parquet")
 
 # join our datasets
 blastp_results_joined <- 
@@ -2029,7 +2062,7 @@ blastp_results_joined <-
   by = c("acc.ver" = "accession.ver")
   ) %>% 
   left_join(., taxid_categories, by = "taxid") # Join our taxid_categories file to the above
-  # Go thorugh and label NAs with taxonomy categories
+
   
 blastp_results_joined <- 
   left_join(blastp_results_joined,
@@ -2125,7 +2158,8 @@ names(supp.labs) <- c("Archaea", "Bacteria", "Eukaryota")
   facet_wrap(~ top_hit, scales = "free", ncol = 1, labeller = labeller(top_hit = supp.labs))
 
 # let's look at our 17 sequences that made it through NCBI bastP search as bacterial in origin.
-left_join(
+df <- 
+    left_join(
       (hgt_index_output_orth %>%
          filter(grepl("^Psammoneisjap", qseqid)) %>%
          filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
@@ -2154,17 +2188,16 @@ left_join(
         top_n(1, bitscore) %>% # select the top blast search result by bitscore for each seq_id
         dplyr::slice(1) %>%
         ungroup() %>% 
-        select(qseqid, category_expanded) %>% 
-        rename(top_hit = category_expanded)),
+        select(qseqid, category_expanded, sacc, sscinames) %>% 
+        rename(top_hit_domain_blastp = category_expanded)),
       by = 'qseqid') %>% 
   rename(archaea_blastp_total_hits = Archaea, 
          bacteria_blastp_total_hits = Bacteria, 
          eukaryota_blastp_total_hits = Eukaryota, 
-         total_hits_blastp = total_hits, 
-         top_hit_domain_blastp = top_hit) %>% 
+         total_hits_blastp = total_hits) %>% 
   left_join(., 
             (hgt_index_output_orth_prok_psam %>% 
-               select(qseqid, hgt_class, chrm_bac, bac_gen_peg, h, h_orth)),
+               select(qseqid, chrm_bac, bac_gen_peg, hgt_class, h, h_orth)),
             by = 'qseqid') 
 
 
