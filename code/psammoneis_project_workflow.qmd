@@ -2158,12 +2158,12 @@ names(supp.labs) <- c("Archaea", "Bacteria", "Eukaryota")
   facet_wrap(~ top_hit, scales = "free", ncol = 1, labeller = labeller(top_hit = supp.labs))
 
 # let's look at our 17 sequences that made it through NCBI bastP search as bacterial in origin.
-df <- 
+blastp_results_final <- 
     left_join(
       (hgt_index_output_orth %>%
          filter(grepl("^Psammoneisjap", qseqid)) %>%
          filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
-         filter(bac_genome %in% c("0F","1F","2F","3F")) %>% 
+         # filter(bac_genome %in% c("0F","1F","2F","3F")) %>% 
          filter(hgt_class == "A")),
       blastp_results_joined,
       by = 'qseqid') %>% 
@@ -2200,6 +2200,7 @@ df <-
                select(qseqid, chrm_bac, bac_gen_peg, hgt_class, h, h_orth)),
             by = 'qseqid') 
 
+# now let's add columns to highlight which sequences had only hits to bacterial genomes, those that only the top hit is to our bacterial genomes, and a column to indicate those that did not hit to our bacterial genomes
 
 ```
 
