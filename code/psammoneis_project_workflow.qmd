@@ -16,16 +16,65 @@ format:
 #| label: setup
 #| include: false
 knitr::opts_chunk$set(echo = TRUE)
+pkgs <- c(
+  "report",
+  "skimr",
+  "janitor",
+  "glue",
+  "ggridges",
+  "ggdist",
+  "ggtext",
+  "ggside",
+  "GenomicRanges",
+  "here",
+  "reshape2",
+  "tidyverse",
+  "patchwork",
+  "seqinr",
+  "coRdon",
+  "data.table",
+  "TidyDensity",
+  "arrow",
+  "RSQLite"
+) # Names of packages we want to load
+pkgs_tidylog <- c(
+  "report",
+  "skimr",
+  "janitor",
+  "glue",
+  "ggridges",
+  "ggdist",
+  "ggtext",
+  "ggside",
+  "GenomicRanges",
+  "here",
+  "reshape2",
+  "tidyverse",
+  "patchwork",
+  "seqinr",
+  "coRdon",
+  "data.table",
+  "TidyDensity",
+  "arrow",
+  "RSQLite",
+  "tidylog"
+) # same as above, but with tidylog if we want more verbose output when using tidy.
 
-pkgs <- c("report", "skimr", "janitor", "glue", "ggridges", "ggdist", "ggtext", "ggside", "GenomicRanges", "here", "reshape2", "tidyverse", "patchwork", "seqinr", "coRdon", "data.table", "TidyDensity", "arrow", "RSQLite") # Names of packages we want to load
-pkgs_tidylog <- c("report", "skimr", "janitor", "glue", "ggridges", "ggdist", "ggtext", "ggside", "GenomicRanges", "here", "reshape2", "tidyverse", "patchwork", "seqinr", "coRdon", "data.table", "TidyDensity", "arrow", "RSQLite", "tidylog") # same as above, but with tidylog if we want more verbose output when using tidy.
-
-pacman::p_load(char = pkgs, install = TRUE, character.only = TRUE) # Load our pacakges
+pacman::p_load(
+  char = pkgs,
+  install = TRUE,
+  character.only = TRUE
+) # Load our pacakges
 
 # Load pkgs, plus tidylog
 # pacman::p_load(char = pkgs_tidylog, 
 #                install = TRUE, 
 #                character.only = TRUE)
+#                
+rm(
+  pkgs,
+  pkgs_tidylog
+)
 
 ```
 
@@ -165,11 +214,48 @@ Next we use the R code below to process our output files and calculate the HGT i
 #| label: Intergenic HGT index 
 #| include: false
 
-colnames_donor <- c("qseqid", "sseqid_d", "pident_d", "length_d", "mismatch_d", "gapopen_d", "qstart_d", "qend_d", "sstart_d", "send_d", "evalue_d", "bitscore_d")
-colnames_recipients <- c("qseqid", "sseqid_r", "pident_r", "length_r", "mismatch_r", "gapopen_r", "qstart_r", "qend_r", "sstart_r", "send_r", "evalue_r", "bitscore_r")
+
+colnames_donor <- c(
+  "qseqid",
+  "sseqid_d",
+  "pident_d",
+  "length_d",
+  "mismatch_d",
+  "gapopen_d",
+  "qstart_d",
+  "qend_d",
+  "sstart_d",
+  "send_d",
+  "evalue_d",
+  "bitscore_d"
+)
+colnames_recipients <- c(
+  "qseqid",
+  "sseqid_r",
+  "pident_r",
+  "length_r",
+  "mismatch_r",
+  "gapopen_r",
+  "qstart_r",
+  "qend_r",
+  "sstart_r",
+  "send_r",
+  "evalue_r",
+  "bitscore_r"
+)
 
 ORF_headers <-
-  read_delim(file = here("data","01_psam_intergenic_HGT_index","psam_genome","orfipy_psamm_complement_intergenic.fa_out","psamm_complement_ORFs_orfipy_headers.delim"), delim = " ", col_names = c("qseqid", "coords_strand", "type", "length", "frame", "start", "stop")) %>%
+  read_delim(
+    file = here(
+      "data",
+      "01_psam_intergenic_HGT_index",
+      "psam_genome",
+      "orfipy_psamm_complement_intergenic.fa_out",
+      "psamm_complement_ORFs_orfipy_headers.delim"
+    ),
+    delim = " ",
+    col_names = c("qseqid", "coords_strand", "type", "length", "frame", "start", "stop")
+  ) %>%
   mutate(across(
     .cols = everything(),
     .fns = ~ str_remove(
@@ -177,46 +263,159 @@ ORF_headers <-
       pattern = "^>|^type:|^length:|^frame:|^start:|^stop:"
     )
   )) %>%
-  separate(qseqid, sep = ":", into = c("chrm", "length_orf"), remove = F) %>% # split and clean qseqid
-  separate(length_orf, sep = "_", into = c("length_orf", "orf_id"), remove = T) %>% # split ORF names 2
-  mutate(length_orf = str_replace_all(string = length_orf, pattern = "[/(/)$]", replacement = "")) %>% # remove () from orf length
-  mutate(chrm = str_replace_all(string = chrm, pattern = "_quiver_pilon$", replacement = "")) %>% # remove quiver pilon from chrm
-  mutate(strand = str_extract_all(coords_strand, "\\(\\+\\)|\\(\\-\\)")) %>%
-  mutate(strand = str_replace_all(string = strand, pattern = "^\\(|\\)$", replacement = "")) %>% # split coords_strand
-  mutate(coords_strand = str_replace_all(string = coords_strand, pattern = "^\\[|\\]|\\(|\\+\\)$|\\-\\)$", replacement = "")) %>% # split coords_strand
-  dplyr::rename(coords = coords_strand)
+  separate(
+    qseqid,
+    sep = ":",
+    into = c("chrm", "length_orf"),
+    remove = F
+  ) %>% # split and clean qseqid
+  separate(
+    length_orf,
+    sep = "_",
+    into = c("length_orf", "orf_id"),
+    remove = T
+  ) %>% # split ORF names 2
+  mutate(length_orf = str_replace_all(
+    string = length_orf,
+    pattern = "[/(/)$]",
+    replacement = ""
+  )) %>% # remove () from orf length
+  mutate(chrm = str_replace_all(
+    string = chrm,
+    pattern = "_quiver_pilon$",
+    replacement = ""
+  )) %>% # remove quiver pilon from chrm
+  mutate(
+    strand = str_extract_all(
+      coords_strand,
+      "\\(\\+\\)|\\(\\-\\)"
+    )
+  ) %>%
+  mutate(
+    strand = str_replace_all(
+      string = strand,
+      pattern = "^\\(|\\)$",
+      replacement = ""
+    )
+  ) %>% # split coords_strand
+  mutate(
+    coords_strand = str_replace_all(
+      string = coords_strand,
+      pattern = "^\\[|\\]|\\(|\\+\\)$|\\-\\)$",
+      replacement = ""
+    )
+  ) %>% # split coords_strand
+  dplyr::rename(
+    coords = coords_strand
+  )
 
 uniprot_reviewed <-
-  read_tsv(file = here("data", "uniprot-reviewed_yes.tsv"), col_names = T) %>%
+  read_tsv(
+    file = here(
+      "data",
+      "uniprot-reviewed_yes.tsv"
+    ),
+    col_names = T
+  ) %>%
   as.data.frame() %>%
   clean_names()
 
 
 # get the directory our bacterial genome GFF annotation files are in
 bac_gff_directory <-
-  here("data","01_psam_intergenic_HGT_index","psam_bac_genomes")
+  here(
+    "data",
+    "01_psam_intergenic_HGT_index",
+    "psam_bac_genomes"
+  )
 
 
 # list the gff files in each directory as a variable
 bac_gff_files <-
-  list.files(path = bac_gff_directory, full.names = T, pattern = "\\.gff")
+  list.files(
+    path = bac_gff_directory,
+    full.names = T,
+    pattern = "\\.gff"
+  )
 
 
 # Here we use fread, lapply, and bind_rows to read in all of our GFF files and bind them by row (i.e., concatenating them) into a single data frame.
 bac_gff <-
-  bind_rows(lapply(bac_gff_files, fread, skip=1, header=F, 
-col.names = c("chrm_bac","source","feature_type","feature_start","feature_end","score","strand","phase","attributes"))) %>%
-  filter(feature_type == "CDS") %>% 
-  mutate(attributes = str_remove(attributes, "ID\\=fig\\|203682\\.28\\.peg\\.|ID\\=fig\\|41295\\.5\\.peg\\.|ID\\=fig\\|89373\\.5\\.peg\\.|ID\\=fig\\|1813606\\.4\\.peg\\.")) %>% 
-  separate(col = attributes, into = c("bac_gen_peg", "bac_gen_gene_annotation"), sep = ";") %>% 
-  mutate(bac_gen_gene_annotation = str_remove(bac_gen_gene_annotation, "Name\\=")) %>% 
-  mutate(length_bac = paste(feature_start,"-",feature_end, "(", strand, ")", sep = "")) %>%
-  select(-c("feature_type","feature_start","feature_end","score","strand")) %>% 
-  mutate(chrm_bac = str_remove(chrm_bac, pattern = "^00000")) 
+  bind_rows(lapply(
+    bac_gff_files,
+    fread,
+    skip=1,
+    header=F,
+    col.names = c(
+      "chrm_bac",
+      "source",
+      "feature_type",
+      "feature_start",
+      "feature_end",
+      "score",
+      "strand",
+      "phase",
+      "attributes"
+    )
+  )) %>%
+  filter(
+    feature_type == "CDS"
+  ) %>% 
+  mutate(
+    attributes = str_remove(
+      attributes,
+      "ID\\=fig\\|203682\\.28\\.peg\\.|ID\\=fig\\|41295\\.5\\.peg\\.|ID\\=fig\\|89373\\.5\\.peg\\.|ID\\=fig\\|1813606\\.4\\.peg\\."
+    )
+  ) %>% 
+  separate(
+    col = attributes,
+    into = c("bac_gen_peg", "bac_gen_gene_annotation"),
+    sep = ";"
+  ) %>% 
+  mutate(
+    bac_gen_gene_annotation = str_remove(
+      bac_gen_gene_annotation,
+      "Name\\="
+    )
+  ) %>% 
+  mutate(
+    length_bac = paste(
+      feature_start,
+      "-",
+      feature_end,
+      "(",
+      strand,
+      ")",
+      sep = ""
+    )
+  ) %>%
+  select(-c(
+    "feature_type",
+    "feature_start",
+    "feature_end",
+    "score",
+    "strand"
+  )) %>% 
+  mutate(
+    chrm_bac = str_remove(
+      chrm_bac,
+      pattern = "^00000"
+    )
+  ) 
 
 # import our eukaryotic HGT blast output
 euk <-
-  read_tsv(file = here("data","01_psam_intergenic_HGT_index","DMNDblastp_uniprot_output_psam","dmnd_blastp_hgt_output","intergenic_dmnd_uniprot_euk.out.tsv"), col_names = colnames_recipients, progress = T) %>%
+  read_tsv(
+    file = here(
+      "data",
+      "01_psam_intergenic_HGT_index",
+      "DMNDblastp_uniprot_output_psam",
+      "dmnd_blastp_hgt_output",
+      "intergenic_dmnd_uniprot_euk.out.tsv"
+    ),
+    col_names = colnames_recipients,
+    progress = T
+  ) %>%
   group_by(qseqid) %>% # group our data by sqeqid
   top_n(1, bitscore_r) %>% # select the top blast search result by bitscore for each seq_id
   dplyr::slice(1) %>%
@@ -224,7 +423,17 @@ euk <-
 
 # import our prokaryotic HGT blast output
 prok <-
-  read_tsv(file = here("data","01_psam_intergenic_HGT_index","DMNDblastp_uniprot_output_psam","dmnd_blastp_hgt_output","intergenic_dmnd_uniprot_prok.out.tsv"), col_names = colnames_donor, progress = T) %>%
+  read_tsv(
+    file = here(
+      "data",
+      "01_psam_intergenic_HGT_index",
+      "DMNDblastp_uniprot_output_psam",
+      "dmnd_blastp_hgt_output",
+      "intergenic_dmnd_uniprot_prok.out.tsv"
+    ),
+    col_names = colnames_donor,
+    progress = T
+  ) %>%
   group_by(qseqid) %>% # group our data by sqeqid
   top_n(1, bitscore_d) %>% # select the top blast search result by bitscore for each seq_id
   dplyr::slice(1) %>%
@@ -234,7 +443,7 @@ prok <-
 # Join our ukaryotic and prokaryotic blast search results to calculate the HGT index
 file3 <-
   full_join(euk, prok, by = "qseqid") %>% # join our two tables by query sequence ID
-    replace_na(list( 
+  replace_na(list( 
     bitscore_d = 0,
     bitscore_r = 0
   )) %>% # here we replace all null values in recipient and donor bitscores with zeros. This is necessary to assign our 'strong' domain classes.
@@ -258,44 +467,122 @@ file3 <-
 # append our uniprot and ORF header info to the first dataframe
 file3_uniprot <-
   file3 %>%
-  separate(qseqid, sep = ":", into = c("chrm", "length_orf"), remove = F) %>% # split ORF names
-  separate(length_orf, sep = "_", into = c("length_orf", "orf_id"), remove = T) %>% # split ORF names 2
-  separate(sseqid_r, sep = "\\|", into = c("uniprot_prefix_r", "uniprot_id_r", "product_r"), remove = T) %>% # sseqid_r split
-  separate(sseqid_d, sep = "\\|", into = c("uniprot_prefix_d", "uniprot_id_d", "product_d"), remove = F) %>% # uniprot hits
-  separate(sseqid_d, sep = "\\.", into = c("chrm_bac", "bac_gen_peg"), remove = T) %>% # bacterial genome hits
-  mutate(length_orf = str_replace_all(string = length_orf, pattern = "[/(/)$]", replacement = "")) %>% # remove () from orf length
-  mutate(chrm = str_replace_all(string = chrm, pattern = "_quiver_pilon$", replacement = "")) %>% # remove quiver pilon from chrm
-  left_join(., uniprot_reviewed, by = c("uniprot_id_r" = "entry")) %>% # Join Uniprot info to recipient hits
-  select(-c(starts_with("uniprot_prefix"))) %>%
-  dplyr::rename(
-    entry_name_uniprot_r = entry_name, gene_ontology_biological_process_uniprot_r = gene_ontology_biological_process, gene_ontology_molecular_function_uniprot_r = gene_ontology_molecular_function, gene_names_uniprot_r = gene_names,
-    organism_uniprot_r = organism, taxonomic_lineage_superkingdom_r = taxonomic_lineage_superkingdom
-  ) %>%
-  left_join(., uniprot_reviewed, by = c("uniprot_id_d" = "entry")) %>% # Join Uniprot info to donor hits
-  dplyr::rename(
-    entry_name_uniprot_d = entry_name, gene_ontology_biological_process_uniprot_d = gene_ontology_biological_process, gene_ontology_molecular_function_uniprot_d = gene_ontology_molecular_function, gene_names_uniprot_d = gene_names,
-    organism_uniprot_d = organism, taxonomic_lineage_superkingdom_d = taxonomic_lineage_superkingdom
-  ) %>%
-  left_join(., ORF_headers, by = c("qseqid", "chrm", "length_orf", "orf_id")) %>% # join ORF information
-  left_join(., bac_gff, by = c("chrm_bac","bac_gen_peg")) %>% # join our gff info
-  as.data.frame() %>% 
-  mutate(taxonomic_lineage_superkingdom_d = ifelse(is.na(taxonomic_lineage_superkingdom_d), "Bacteria", taxonomic_lineage_superkingdom_d)) %>% # replace NAs in superkingdom column with bacteria for our bacterial genome hits
+  separate(
+    qseqid,
+    sep = ":",
+    into = c("chrm", "length_orf"),
+    remove = F
+  ) %>% # split ORF names
+  separate(
+    length_orf,
+    sep = "_",
+    into = c("length_orf", "orf_id"),
+    remove = T
+  ) %>% # split ORF names 2
+  separate(
+    sseqid_r,
+    sep = "\\|",
+    into = c("uniprot_prefix_r", "uniprot_id_r", "product_r"),
+    remove = T
+  ) %>% # sseqid_r split
+  separate(
+    sseqid_d,
+    sep = "\\|",
+    into = c("uniprot_prefix_d", "uniprot_id_d", "product_d"),
+    remove = F
+  ) %>% # uniprot hits
+  separate(
+    sseqid_d,
+    sep = "\\.",
+    into = c("chrm_bac", "bac_gen_peg"),
+    remove = T
+  ) %>% # bacterial genome hits
   mutate(
-      organism_uniprot_d = # assign taxonomy of our bacterial genomes tp organism_uniprot_d column
-        case_when(
-          # strong prokaryote
-          chrm_bac == "0F" ~ "Phycisphaerae sp.",
-          chrm_bac == "1F" ~ "Rhodovibrionaceae sp.",
-          chrm_bac == "2F" ~ "Ekhidna sp.",
-          chrm_bac == "3F" ~ "Balneola sp.",
-        )
-    ) 
+    length_orf = str_replace_all(string = length_orf, pattern = "[/(/)$]", replacement = "")
+  ) %>% # remove () from orf length
+  mutate(chrm = str_replace_all(
+    string = chrm,
+    pattern = "_quiver_pilon$",
+    replacement = ""
+  )) %>% # remove quiver pilon from chrm
+  left_join(
+    .,
+    uniprot_reviewed,
+    by = c("uniprot_id_r" = "entry")
+  ) %>% # Join Uniprot info to recipient hits
+  select(-c(starts_with(
+    "uniprot_prefix"
+  ))) %>%
+  dplyr::rename(
+    entry_name_uniprot_r = entry_name,
+    gene_ontology_biological_process_uniprot_r = gene_ontology_biological_process,
+    gene_ontology_molecular_function_uniprot_r = gene_ontology_molecular_function,
+    gene_names_uniprot_r = gene_names,
+    organism_uniprot_r = organism,
+    taxonomic_lineage_superkingdom_r = taxonomic_lineage_superkingdom
+  ) %>%
+  left_join(
+    .,
+    uniprot_reviewed,
+    by = c(
+      "uniprot_id_d" = "entry"
+    )
+  ) %>% # Join Uniprot info to donor hits
+  dplyr::rename(
+    entry_name_uniprot_d = entry_name,
+    gene_ontology_biological_process_uniprot_d = gene_ontology_biological_process,
+    gene_ontology_molecular_function_uniprot_d = gene_ontology_molecular_function,
+    gene_names_uniprot_d = gene_names,
+    organism_uniprot_d = organism,
+    taxonomic_lineage_superkingdom_d = taxonomic_lineage_superkingdom
+  ) %>%
+  left_join(
+    .,
+    ORF_headers,
+    by = c("qseqid", "chrm", "length_orf", "orf_id")
+  ) %>% # join ORF information
+  left_join(
+    .,
+    bac_gff,
+    by = c("chrm_bac","bac_gen_peg")
+  ) %>% # join our gff info
+  as.data.frame() %>% 
+  mutate(
+    taxonomic_lineage_superkingdom_d = ifelse(
+      is.na(
+        taxonomic_lineage_superkingdom_d
+      ),
+      "Bacteria",
+      taxonomic_lineage_superkingdom_d
+    )
+  ) %>% # replace NAs in superkingdom column with bacteria for our bacterial genome hits
+  mutate(
+    organism_uniprot_d = # assign taxonomy of our bacterial genomes tp organism_uniprot_d column
+      case_when(
+        # strong prokaryote
+        chrm_bac == "0F" ~ "Phycisphaerae sp.",
+        chrm_bac == "1F" ~ "Rhodovibrionaceae sp.",
+        chrm_bac == "2F" ~ "Ekhidna sp.",
+        chrm_bac == "3F" ~ "Balneola sp.",
+      )
+  ) 
 # get a list of uniprot IDs in chrm_bac for removal
 remove_these <-
   (file3_uniprot %>%
-    select(chrm_bac) %>%
-    filter(!chrm_bac %in% c("0F", "1F", "2F", "3F")) %>%
-    filter(!is.na(chrm_bac))
+     select(chrm_bac) %>%
+     filter(
+       !chrm_bac %in% c(
+         "0F",
+         "1F",
+         "2F",
+         "3F"
+       )
+     ) %>%
+     filter(
+       !is.na(
+         chrm_bac
+       )
+     )
   )[["chrm_bac"]]
 
 # render non 0-3F entries as NAs
@@ -317,12 +604,20 @@ file3_uniprot$chrm_bac[file3_uniprot$chrm_bac %in% remove_these] <- NA
 file3_uniprot_prok_hits_eco <-
   read_tsv(
     file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/file3_uniprot_prok_hits_ecology_domain.tsv",
-    col_names = c("organism_uniprot_d", "ecology_broad", "ecology_fine", "domain"), skip = 1
+    col_names = c(
+      "organism_uniprot_d",
+      "ecology_broad",
+      "ecology_fine",
+      "domain"
+    ),
+    skip = 1
   ) %>%
   unique() %>%
   left_join(
     (file3_uniprot %>%
-      filter(domain_assignment == "prokaryote" | domain_assignment == "prokaryote_strong")),
+       filter(
+         domain_assignment == "prokaryote" | domain_assignment == "prokaryote_strong"
+       )),
     .,
     by = "organism_uniprot_d"
   )
@@ -331,61 +626,140 @@ file3_uniprot_prok_hits_eco <-
 file3_uniprot_prok_hits_0Fthru3F <-
   file3_uniprot_prok_hits_eco %>% 
   filter(!is.na(chrm_bac)) %>% 
-  mutate(header = paste(chrm_bac, length_bac, sep = ":"))
+  mutate(header = paste(
+    chrm_bac,
+    length_bac,
+    sep = ":"
+  ))
 
 # here we will have an unsliced version of the above so that we can isolate all of the best prokarayote hits to our porkaryote/prokaryote_strong h index classifications.
 # once we have this, we will download these nuclotide sequences and align them with our qseqid.
 prok_unSliced <-
-  read_tsv(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/DMNDblastp_uniprot_output_psam/dmnd_blastp_hgt_output/intergenic_dmnd_uniprot_prok.out.tsv", col_names = colnames_donor, progress = T) %>%
+  read_tsv(
+    file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/DMNDblastp_uniprot_output_psam/dmnd_blastp_hgt_output/intergenic_dmnd_uniprot_prok.out.tsv",
+    col_names = colnames_donor,
+    progress = T
+  ) %>%
   group_by(qseqid) %>% # group our data by sqeqid
-  dplyr::filter(qseqid %in% file3_uniprot_prok_hits_eco$qseqid) %>%
+  dplyr::filter(
+    qseqid %in% file3_uniprot_prok_hits_eco$qseqid
+  ) %>%
   ungroup() %>%
-  separate(sseqid_d, sep = "\\|", into = c("uniprot_prefix_d", "uniprot_id_d", "product_d"), remove = F) %>% # uniprot hits
-  separate(sseqid_d, sep = ":", into = c("chrm_bac", "length_bac"), remove = T) %>% # bacterial genome hits
+  separate(
+    sseqid_d,
+    sep = "\\|",
+    into = c(
+      "uniprot_prefix_d",
+      "uniprot_id_d",
+      "product_d"
+    ),
+    remove = F
+  ) %>% # uniprot hits
+  separate(
+    sseqid_d,
+    sep = ":",
+    into = c("chrm_bac", "length_bac"),
+    remove = T
+  ) %>% # bacterial genome hits
   select(-c(starts_with("uniprot_prefix"))) %>%
   select(uniprot_id_d) %>%
   filter(!is.na(uniprot_id_d)) %>%
   unique()
 
 # write it!
-write_delim(prok_unSliced, file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/file3_uniprot_prok_IDs_all_hits.delim", delim = " ", col_names = FALSE)
+write_delim(
+  prok_unSliced,
+  file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/file3_uniprot_prok_IDs_all_hits.delim",
+  delim = " ",
+  col_names = FALSE
+)
 
 # read in out output from uniprot search
 uniprot2ncbi_ids_all_hits <-
-  read_tsv(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/uniprot-yourlist_M20220411A084FC58F6BBA219896F365D15F2EB444998D7P.tab", col_names = TRUE, col_types = NULL) %>%
+  read_tsv(
+    file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/uniprot-yourlist_M20220411A084FC58F6BBA219896F365D15F2EB444998D7P.tab",
+    col_names = TRUE,
+    col_types = NULL
+  ) %>%
   janitor::clean_names() %>%
   left_join(
-    (read_tsv(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/DMNDblastp_uniprot_output_psam/dmnd_blastp_hgt_output/intergenic_dmnd_uniprot_prok.out.tsv", col_names = colnames_donor, progress = T) %>%
-      group_by(qseqid) %>% # group our data by sqeqid
-      dplyr::filter(qseqid %in% file3_uniprot_prok_hits_eco$qseqid) %>%
-      ungroup() %>%
-      separate(sseqid_d, sep = "\\|", into = c("uniprot_prefix_d", "uniprot_id_d", "product_d"), remove = T) %>% # uniprot hits
-      select(-c(starts_with("uniprot_prefix")))),
+    (read_tsv(
+      file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/DMNDblastp_uniprot_output_psam/dmnd_blastp_hgt_output/intergenic_dmnd_uniprot_prok.out.tsv",
+      col_names = colnames_donor,
+      progress = T
+    ) %>%
+       group_by(qseqid) %>% # group our data by sqeqid
+       dplyr::filter(
+         qseqid %in% file3_uniprot_prok_hits_eco$qseqid
+       ) %>%
+       ungroup() %>%
+       separate(
+         sseqid_d,
+         sep = "\\|",
+         into = c("uniprot_prefix_d", "uniprot_id_d", "product_d"),
+         remove = T
+       ) %>% # uniprot hits
+       select(-c(starts_with("uniprot_prefix")))),
     .,
     by = c("uniprot_id_d" = "entry")
   ) %>%
-  mutate(cross_reference_ref_seq = str_extract(cross_reference_ref_seq, "WP_[:digit:]+.1")) %>%
-  rename(sseqid = cross_reference_ref_seq) %>%
-  dplyr::select(-c(entry_name, uniprot_id_d, product_d)) %>%
+  mutate(
+    cross_reference_ref_seq = str_extract(
+      cross_reference_ref_seq,
+      "WP_[:digit:]+.1"
+    )
+  ) %>%
+  rename(
+    sseqid = cross_reference_ref_seq
+  ) %>%
+  dplyr::select(
+    -c(
+      entry_name,
+      uniprot_id_d,
+      product_d
+    )
+  ) %>%
   drop_na() %>%
   relocate(sseqid, .after = qseqid)
 
-write_tsv(uniprot2ncbi_ids_all_hits, file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/uniprot2ncbi_ids_all_hits.tsv", col_names = FALSE)
+write_tsv(
+  uniprot2ncbi_ids_all_hits,
+  file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/uniprot2ncbi_ids_all_hits.tsv",
+  col_names = FALSE
+)
 
-rm(euk, prok, ORF_headers, uniprot_reviewed, file3, colnames_donor, colnames_recipients, remove_these, bac_gff_directory, bac_gff_files)
+rm(
+  euk,
+  prok,
+  ORF_headers,
+  uniprot_reviewed,
+  file3,
+  colnames_donor,
+  colnames_recipients,
+  remove_these,
+  bac_gff_directory,
+  bac_gff_files
+)
 ```
 
 ```{r}
-#| label: hgt index data summaries
-#| include: false
+
 
 #  # X is a sample of 100 normally distributed random variables
-# P = ecdf(file3$h)    # P is a function giving the empirical CDF of X
-# P(0.0)         # This returns the empirical CDF at zero (should be close to 0.5)
+# P = ecdf(file3$h)    
+# # P is a function giving the empirical CDF of X
+# P(0.0)        
+#  # This returns the empirical CDF at zero (should be close to 0.5)
 # plot(P)
 
 file3_uniprot %>%
-  select(evalue_r, evalue_d, bitscore_r, bitscore_d, h) %>%
+  select(
+    evalue_r,
+    evalue_d,
+    bitscore_r,
+    bitscore_d,
+    h
+  ) %>%
   summary()
 
 file3_uniprot %>%
@@ -394,38 +768,22 @@ file3_uniprot %>%
   mutate(freq = round(cnt / sum(cnt), 3)) %>%
   dplyr::arrange(desc(freq))
 
-# table(file3_uniprot_prok_hits_eco$gene_ontology_molecular_function_uniprot_d) %>% 
-#   as.data.frame() %>% 
-#   mutate(Var1 = str_remove_all(Var1, " \\[GO\\:[:digit:]+\\]")) %>% 
-#   ggplot(aes(y=Var1, x = Freq)) +
-#   geom_bar(stat = "identity")
-# 
-# table(file3_uniprot_prok_hits_eco$gene_ontology_biological_process_uniprot_d) %>% 
-#   as.data.frame() %>% 
-#   mutate(Var1 = str_remove_all(Var1, " \\[GO\\:[:digit:]+\\]")) %>% 
-#   ggplot(aes(y=Var1, x = Freq)) +
-#   geom_bar(stat = "identity")
-# 
-# table(file3_uniprot_prok_hits_eco$bac_gen_gene_annotation) %>% 
-#   as.data.frame() %>% 
-#   add_column() %>% 
-#   ggplot(aes(y=Var1, x = Freq)) +
-#   geom_bar(stat = "identity")
+
 
 # strong prokaryotic blast hits
 file3_uniprot_prok_hits_eco %>% 
-filter(bitscore_d >= 100 & evalue_d <= 1e-12) %>% 
- nrow()
+  filter(bitscore_d >= 100 & evalue_d <= 1e-12) %>% 
+  nrow()
 
 # strong prokaryotic blast hits to 0F-3F
 file3_uniprot_prok_hits_eco %>% 
-filter(bitscore_d >= 100 & evalue_d <= 1e-12) %>% 
+  filter(bitscore_d >= 100 & evalue_d <= 1e-12) %>% 
   filter(!is.na(chrm_bac)) %>% 
   nrow()
 
 # strong prokaryotic blast hits to uniprot
 file3_uniprot_prok_hits_eco %>% 
-filter(bitscore_d >= 100 & evalue_d <= 1e-12) %>% 
+  filter(bitscore_d >= 100 & evalue_d <= 1e-12) %>% 
   filter(is.na(chrm_bac)) %>% 
   nrow()
 
@@ -453,17 +811,44 @@ file3_uniprot_prok_hits_0Fthru3F %>%
 
 # Determine which of these psammoneis chrmosomes with multiple hits are hitting to the same bacterial genes
 file3_uniprot_prok_hits_0Fthru3F %>% 
-  filter(chrm %in% c("000002F","000037F","000089F","000103F","000532F")) %>% 
+  filter(chrm %in% c(
+    "000002F",
+    "000037F",
+    "000089F",
+    "000103F",
+    "000532F"
+  )) %>% 
   arrange(chrm) %>% 
-  select(chrm, chrm_bac, bac_gen_peg) 
+  select(
+    chrm,
+    chrm_bac,
+    bac_gen_peg
+  ) 
 
 # Now, let's check out the ones that have multiple hits to the same bacterial genes
 file3_uniprot_prok_hits_0Fthru3F %>% 
-  filter(chrm %in% c("000002F","000089F","000103F","000532F")) %>% 
+  filter(chrm %in% c(
+    "000002F",
+    "000089F",
+    "000103F",
+    "000532F"
+  )) %>% 
   arrange(chrm) %>% 
-  select(chrm, chrm_bac, bac_gen_peg, qstart_d, qend_d, sstart_d, send_d, type, frame, strand, bac_gen_gene_annotation)
-  
-  
+  select(
+    chrm,
+    chrm_bac,
+    bac_gen_peg,
+    qstart_d,
+    qend_d,
+    sstart_d,
+    send_d,
+    type,
+    frame,
+    strand,
+    bac_gen_gene_annotation
+  )
+
+
 # Seems like 89F is the only one with sufficient evidence for being the result of pseudogenization
 file3_uniprot_prok_hits_0Fthru3F %>% 
   filter(chrm == "000089F") %>% 
@@ -505,11 +890,17 @@ Based on the visualization below, an *h* value cutoff of 30 should be fine.
 file3_uniprot %>%
   ggplot(aes(x = h)) +
   stat_ecdf(geom = "point") +
-  scale_x_continuous(breaks = c(seq(-200, 300, by = 50), 30), limits = c(-200,300)) +
+  scale_x_continuous(
+    breaks = c(seq(-200, 300, by = 50), 30),
+    limits = c(-200,300)
+  ) +
   xlab("HGT index (<i>h</i>)") +
   ylab("Empirical cumulative distribution of <i>h</i>") +
   theme(
-    axis.text.x = element_text(angle = 90, hjust = 1),
+    axis.text.x = element_text(
+      angle = 90,
+      hjust = 1
+    ),
     # Hide panel borders and remove grid lines
     panel.border = element_blank(),
     # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
@@ -526,7 +917,11 @@ file3_uniprot %>%
     legend.position = "none",
     legend.title = element_blank()
   ) +
-  geom_vline(xintercept = 30, color = "black", linetype = 3)
+  geom_vline(
+    xintercept = 30,
+    color = "black",
+    linetype = 3
+  )
 ```
 
 ```{r}
@@ -541,7 +936,12 @@ file3_uniprot_prok <-
   arrange(chrm, length_orf) %>% # arrange by chrm, then length_orf w/in each chrm
   separate(col = coords, into = c("startcoord_orf", "stopCoord_orf"), remove = T) %>% # split length_orf into startcoord_orf stopCoord_orf
   # collapse our ranges in each chromosome group
-  select(startcoord_orf, stopCoord_orf, strand, chrm) %>%
+  select(
+    startcoord_orf,
+    stopCoord_orf,
+    strand,
+    chrm
+  ) %>%
   dplyr::rename("start" = "startcoord_orf", "end" = "stopCoord_orf") %>%
   mutate(start = as.numeric(start)) %>%
   mutate(end = as.numeric(end))
@@ -594,13 +994,19 @@ write_tsv()
 
 # see how many overlaps there are
 inner_join(as.data.frame(table(file3_uniprot_prok$chrm)),
-  as.data.frame(table(file3_uniprot_prok_overlaps$seqnames)),
-  by = "Var1"
+           as.data.frame(table(file3_uniprot_prok_overlaps$seqnames)),
+           by = "Var1"
 ) %>%
   inner_join(., as.data.frame(table(file3_uniprot_prok_overlaps_1k$seqnames)), by = "Var1") %>%
   mutate(n_overlaps = Freq.x - Freq.y) %>%
   mutate(n_overlaps_1k = Freq.x - Freq) %>%
-  summarise(total = sum(Freq.x), sum_nonOverlap = sum(Freq.x) - sum(n_overlaps), sum_nonOverlap_1k = sum(Freq.x) - sum(n_overlaps_1k), sum_overlaps = sum(n_overlaps), sum_overlaps_1k = sum(n_overlaps_1k)) %>%
+  summarise(
+    total = sum(Freq.x),
+    sum_nonOverlap = sum(Freq.x) - sum(n_overlaps),
+    sum_nonOverlap_1k = sum(Freq.x) - sum(n_overlaps_1k),
+    sum_overlaps = sum(n_overlaps),
+    sum_overlaps_1k = sum(n_overlaps_1k)
+  ) %>%
   pivot_longer(cols = everything()) %>%
   ggplot(aes(x = name, y = value, fill = name)) + # Plot with values on top
   geom_bar(stat = "identity") +
@@ -747,8 +1153,12 @@ p_dat_1k <-
   # filter(seqnames == "000015F") %>%
   ggplot() +
   geom_rect(aes(
-    xmin = start, xmax = end,
-    ymin = bin, ymax = bin + 0.9, fill = seqnames, color = seqnames
+    xmin = start, 
+    xmax = end,
+    ymin = bin, 
+    ymax = bin + 0.9, 
+    fill = seqnames, 
+    color = seqnames
   )) +
   viridis::scale_color_viridis(discrete = T) +
   viridis::scale_fill_viridis(discrete = T) +
@@ -1529,6 +1939,28 @@ hgt_index_output_orth_prok_psam <-
   filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
   filter(grepl("^Psammoneisjap", qseqid))
 
+## We will use this to examine what percentage of our class A hits are only to our 0F-3F bacterial genomes
+# and which are also hitting to uniprot hits
+bac_gen_unqiue_hits_qseqid <- 
+  left_join(
+  (donor_files_all %>% filter(grepl("^Psammoneisjap", qseqid))), 
+   (hgt_index_output_orth_prok_psam %>% filter(hgt_class == 'A')), 
+          by = c("qseqid", "sseqid_d", "orthogroup", "pident_d","length_d","mismatch_d","gapopen_d","qstart_d","qend_d","sstart_d","send_d","evalue_d","bitscore_d")) %>% 
+  select(-c(ends_with("_r"))) %>% 
+  group_by(qseqid) %>%
+  filter(any(!is.na(h))) %>% 
+  filter(any(bac_genome %in% c("0F","1F","2F","3F"))) %>% 
+  select(orthogroup, qseqid, sseqid_d, h, h_orth, hgt_class, chrm_bac) %>% 
+  mutate(total_hits = n()) %>% 
+  # ungroup() %>% 
+  # group_by(orthogroup) %>% 
+  mutate(qseqid_distinct = n_distinct(qseqid)) %>% 
+  ungroup() %>% 
+  group_by(qseqid) %>% 
+  mutate(genome_pct = sum(str_count(sseqid_d, '[:digit:]+F'))/n()) %>% 
+  arrange(orthogroup, desc(h)) %>% 
+  ungroup()
+
 rm(uniprot_reviewed, d_r_hOrth, donor_files, recipient_files, recipients, donors, donor_directory, recipient_directory)
 ```
 
@@ -1580,28 +2012,6 @@ hgt_index_output_orth_prok_psam_unassigned <-
   hgt_index_output_orth_prok_psam %>% 
   filter(orthogroup %in% orthogroups_unassigned$orthogroup)
 
-# We will use this to examine what percentage of our class A hits are only to our 0F-3F bacterial genomes
-# and which are also hitting to uniprot hits
-bac_gen_unqiue_hits_qseqid <- 
-  left_join(
-  (donor_files_all %>% filter(grepl("^Psammoneisjap", qseqid))), 
-   (hgt_index_output_orth_prok_psam %>% filter(hgt_class == 'A')), 
-          by = c("qseqid", "sseqid_d", "orthogroup", "pident_d","length_d","mismatch_d","gapopen_d","qstart_d","qend_d","sstart_d","send_d","evalue_d","bitscore_d")) %>% 
-  select(-c(ends_with("_r"))) %>% 
-  group_by(qseqid) %>%
-  filter(any(!is.na(h))) %>% 
-  filter(any(bac_genome %in% c("0F","1F","2F","3F"))) %>% 
-  select(orthogroup, qseqid, sseqid_d, h, h_orth, hgt_class, chrm_bac) %>% 
-  mutate(total_hits = n()) %>% 
-  ungroup() %>% 
-  group_by(orthogroup) %>% 
-  mutate(qseqid_distinct = n_distinct(qseqid)) %>% 
-  ungroup() %>% 
-  group_by(qseqid) %>% 
-  mutate(genome_pct = sum(str_count(sseqid_d, '[:digit:]+F'))/n()) %>% 
-  arrange(orthogroup, desc(h)) %>% 
-  ungroup()
-  
 
 bac_gen_unqiue_hits_OG <- 
   left_join(
@@ -2053,7 +2463,7 @@ taxid_categories <-
 
 
 # join our datasets
-blastp_results_joined <- 
+blastp_results <- 
   left_join( # join our blastp results with our prot.accession2taxid data from the parquet files
     blastp_results,
     (prot.accession2taxid %>% 
@@ -2065,8 +2475,8 @@ blastp_results_joined <-
 
   
 blastp_results_joined <- 
-  left_join(blastp_results_joined,
-            (blastp_results_joined %>% 
+  left_join(blastp_results,
+            (blastp_results %>% 
                group_by(qseqid) %>% 
                select(qseqid, category_expanded) %>% 
                table() %>% 
@@ -2197,10 +2607,46 @@ blastp_results_final <-
          total_hits_blastp = total_hits) %>% 
   left_join(., 
             (hgt_index_output_orth_prok_psam %>% 
-               select(qseqid, chrm_bac, bac_gen_peg, hgt_class, h, h_orth)),
-            by = 'qseqid') 
+               select(qseqid, organism_uniprot_d, chrm_bac, bac_gen_peg, bac_gen_gene_annotation, pident_d, bitscore_d, hgt_class, h, h_orth)),
+            by = 'qseqid') %>% 
+  filter(top_hit_domain_blastp == "Bacteria")
+
 
 # Investigate those sequences that have a top hit to Eukaryota but also hit to bacteria.
+blastp_results_final_composition <- 
+  left_join(
+    (blastp_results %>% 
+       group_by(qseqid) %>% 
+       top_n(10, bitscore) %>% 
+       slice_head(n = 10) %>% 
+       ungroup()), 
+    
+    (left_join(
+               (hgt_index_output_orth %>%
+                  filter(grepl("^Psammoneisjap", qseqid)) %>%
+                  filter(domain_assignment == "prokaryote_strong" | domain_assignment == "prokaryote") %>%
+                  filter(bac_genome %in% c("0F","1F","2F","3F")) %>%
+                  filter(hgt_class == "A")),
+               blastp_results,
+               by = 'qseqid') %>% 
+               group_by(qseqid) %>% 
+               top_n(10, bitscore) %>% 
+               slice_head(n = 10) %>% 
+               ungroup() %>% 
+               select(qseqid, category_expanded) %>% 
+               table() %>% 
+               as.data.frame() %>% 
+               pivot_wider(names_from = category_expanded, values_from = Freq) %>% 
+               mutate( # now we make a column to calculate the total hits to each qseqid
+               total_hits = rowSums(select(., contains(c("Arc","Bac","Euk"))))
+               ) ),
+      by = "qseqid") %>% 
+  rename(archaea_blastp_total_hits = Archaea, 
+         bacteria_blastp_total_hits = Bacteria, 
+         eukaryota_blastp_total_hits = Eukaryota, 
+         total_hits_blastp = total_hits) %>% 
+  filter(!eukaryota_blastp_total_hits == 10, !bacteria_blastp_total_hits == 10, bacteria_blastp_total_hits >= 5) %>% 
+  arrange(qseqid, desc(bitscore))
 
 # now let's add columns to highlight which sequences had only hits to bacterial genomes, those that only the top hit is to our bacterial genomes, and a column to indicate those that did not hit to our bacterial genomes
 # You'll need to refer back to your original crisp HGT output file and filter by the IDs that are in the blastp_final DF.
@@ -2213,13 +2659,24 @@ donors <-
   list.files(path = donor_directory, full.names = T)
 # Here we use fread, lapply, and bind_rows to read in all of our output files and bind them by row (i.e., concatenating them) into a single dataframe for donor and recipient results, respectively.
 donor_files_unsliced <-
-  bind_rows(lapply(donors, fread)) %>%
-  mutate(orthogroup = str_remove(orthogroup, ".fa.donor.dmndBlastOut.tsv")) %>% 
+  hgt_index_output_orth_prok_psam %>% 
   filter(qseqid %in% blastp_results_final$qseqid) %>% 
-  group_by(qseqid) %>% 
-  # now we will count the number of hits per qseqid, 
-  # then mutate a new column to show the percentage of hits to our bacterial genomes
-
+ # now we will count the number of hits per qseqid,
+ # then mutate a new column to show the percentage of hits to our bacterial genomes
+  right_join(., bac_gen_unqiue_hits_qseqid, by = c('qseqid', 'sseqid_d', 'orthogroup', 'h', 'h_orth', 'hgt_class', "chrm_bac")) %>% 
+  left_join(., 
+            (blastp_results_joined %>% 
+        group_by(qseqid) %>% # group our data by sqeqid
+        top_n(1, bitscore) %>% # select the top blast search result by bitscore for each seq_id
+        dplyr::slice(1) %>%
+        ungroup() %>% 
+        select(qseqid, category_expanded) %>% 
+        rename(top_hit_blastp = category_expanded)), 
+        by = "qseqid") %>% 
+  filter(top_hit_blastp == "Bacteria", !is.na(h)) %>% 
+  janitor::remove_empty("cols") %>% 
+  select(qseqid, sseqid_d, orthogroup, h, h_orth, domain_assignment, hgt_class, total_hits, genome_pct, top_hit_blastp)
+  
 
 ```
 
