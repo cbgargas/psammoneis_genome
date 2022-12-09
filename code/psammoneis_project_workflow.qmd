@@ -603,7 +603,7 @@ file3_uniprot$chrm_bac[file3_uniprot$chrm_bac %in% remove_these] <- NA
 # import the updated tsv
 file3_uniprot_prok_hits_eco <-
   read_tsv(
-    file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/file3_uniprot_prok_hits_ecology_domain.tsv",
+    file = here("data","01_psam_intergenic_HGT_index","file3_uniprot_prok_hits_ecology_domain.tsv"),
     col_names = c(
       "organism_uniprot_d",
       "ecology_broad",
@@ -632,11 +632,11 @@ file3_uniprot_prok_hits_0Fthru3F <-
     sep = ":"
   ))
 
-# here we will have an unsliced version of the above so that we can isolate all of the best prokarayote hits to our porkaryote/prokaryote_strong h index classifications.
-# once we have this, we will download these nuclotide sequences and align them with our qseqid.
+# here we will have an un-sliced version of the above so that we can isolate all of the best prokarayote hits to our prokaryote/prokaryote_strong h index classifications.
+# once we have this, we will download these nucleotide sequences and align them with our qseqid.
 prok_unSliced <-
   read_tsv(
-    file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/DMNDblastp_uniprot_output_psam/dmnd_blastp_hgt_output/intergenic_dmnd_uniprot_prok.out.tsv",
+    file = here("data","01_psam_intergenic_HGT_index","DMNDblastp_uniprot_output_psam","dmnd_blastp_hgt_output","intergenic_dmnd_uniprot_prok.out.tsv"),
     col_names = colnames_donor,
     progress = T
   ) %>%
@@ -669,7 +669,7 @@ prok_unSliced <-
 # write it!
 write_delim(
   prok_unSliced,
-  file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/file3_uniprot_prok_IDs_all_hits.delim",
+  file = here("data","file3_uniprot_prok_IDs_all_hits.delim"),
   delim = " ",
   col_names = FALSE
 )
@@ -677,14 +677,14 @@ write_delim(
 # read in out output from uniprot search
 uniprot2ncbi_ids_all_hits <-
   read_tsv(
-    file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/uniprot-yourlist_M20220411A084FC58F6BBA219896F365D15F2EB444998D7P.tab",
+    file = here("data","uniprot-yourlist_M20220411A084FC58F6BBA219896F365D15F2EB444998D7P.tab"),
     col_names = TRUE,
     col_types = NULL
   ) %>%
   janitor::clean_names() %>%
   left_join(
     (read_tsv(
-      file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/DMNDblastp_uniprot_output_psam/dmnd_blastp_hgt_output/intergenic_dmnd_uniprot_prok.out.tsv",
+      file = here("data","01_psam_intergenic_HGT_index","DMNDblastp_uniprot_output_psam","dmnd_blastp_hgt_output","intergenic_dmnd_uniprot_prok.out.tsv"),
       col_names = colnames_donor,
       progress = T
     ) %>%
@@ -724,7 +724,7 @@ uniprot2ncbi_ids_all_hits <-
 
 write_tsv(
   uniprot2ncbi_ids_all_hits,
-  file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/uniprot2ncbi_ids_all_hits.tsv",
+  file = here("data","uniprot2ncbi_ids_all_hits.tsv"),
   col_names = FALSE
 )
 
@@ -1318,10 +1318,10 @@ file3_uniprot_prok_hits_eco %>%
 
 # first, read in ORFs and filter to only those with prokaryote hits
 ORFs <-
-  read.fasta(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/psam_genome/orfipy_psamm_complement_intergenic.fa_out/psamm_complement_ORFs_orfipy.fa", as.string = T, seqtype = "DNA")
+  read.fasta(file = here("data","01_psam_intergenic_HGT_index","psam_genome","orfipy_psamm_complement_intergenic.fa_out","psamm_complement_ORFs_orfipy.fa"), as.string = T, seqtype = "DNA")
 
 psamm_cds <-
-  read.fasta(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/DMNDblastp_uniprot_output_psam/01_genomes_CDS/psam_genic.fa", as.string = T, seqtype = "DNA")
+  read.fasta(here("data","01_psam_intergenic_HGT_index","DMNDblastp_uniprot_output_psam", "01_genomes_CDS"), as.string = T, seqtype = "DNA")
 
 # subsample psam CDS genes
 psamm_subsampled <-
@@ -1795,15 +1795,15 @@ orthogroups %>%
 
 # read in UniProt information for each sseqid in our blast databases
 uniprot_reviewed <-
-  read_tsv(file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/uniprot-reviewed_yes.tsv", col_names = T) %>%
+  read_tsv(file = here("data","uniprot-reviewed_yes.tsv"), col_names = T) %>%
   as.data.frame() %>%
   clean_names()
 
 # assign the output directories as variables
 donor_directory <-
-  "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/HGT_index_output/HGT_index_output_donor/"
+  here("data","02_hgt_index","HGT_index_output","HGT_index_output_donor")
 recipient_directory <-
-  "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/02_hgt_index/HGT_index_output/HGT_index_output_recipient/"
+  here("data","02_hgt_index","HGT_index_output","HGT_index_output_recipient")
 
 # list the files in each directory as a variable
 donors <-
@@ -2607,10 +2607,11 @@ blastp_results_final <-
          total_hits_blastp = total_hits) %>% 
   left_join(., 
             (hgt_index_output_orth_prok_psam %>% 
-               select(qseqid, organism_uniprot_d, chrm_bac, bac_gen_peg, bac_gen_gene_annotation, pident_d, bitscore_d, hgt_class, h, h_orth)),
+               select(qseqid, organism_uniprot_d, chrm_bac, bac_gen_peg, bac_gen_gene_annotation, pident_d, bitscore_d, hgt_class, h, h_orth, domain_assignment, orthogroup)),
             by = 'qseqid') %>% 
   filter(top_hit_domain_blastp == "Bacteria")
-
+  
+write_csv(blastp_results_final, "~/Downloads/blastp_results_final.csv")
 
 # Investigate those sequences that have a top hit to Eukaryota but also hit to bacteria.
 blastp_results_final_composition <- 
