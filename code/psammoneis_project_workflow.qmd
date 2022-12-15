@@ -2681,6 +2681,125 @@ donor_files_unsliced <-
 
 ```
 
+Finally, we will use NCBI BlastP to check our class A sequences.  
+First, we use the SLURM script 'submit_01_download_ncbi_nr_db_c1432.slurm' to download the most recent NR blast database and taxonomy database. 
+
+Next, we export our class A Psammoneis protein sequences into a FASTA file. 
+
+
+```{r}
+#| label: export Final 17 class A seqs for location protein localization and PHYRE2 analyses
+#| eval: true
+#| echo: false
+#| warning: false
+#| error: false
+#| output: false
+
+# We will import Psammoneis CDS sequences from orthofinder and filter them to only the sequences of Class A hits to our bacterial genome
+psam_CDS <-
+  bioseq::read_fasta(file = here("data","02_hgt_index","orthofinder_psammoneis_wade","Psammoneis_japonica.faa"), type = "AA")
+
+# We'll then export those and NCBI blastp them to check that the top hit is prokaryotic
+# Psammoneis_only
+psam_genic_classA_final <-
+  blastp_results_final %>% 
+  filter(hgt_class == "A") %>% 
+  select(qseqid) %>% 
+  tibble()
+
+# now we filter the Psammoneis CDS seqs with the class A qseqids
+psam_genic_classA_final <-
+  tibble(label = names(psam_CDS), sequence = psam_CDS) %>% 
+  filter(label %in% psam_genic_classA_final$qseqid) %>% 
+  mutate(label = paste(">", label, sep = ""))
+
+
+# split up the psam_CDS_classA_NONbacgen file into chunks so that ncbi BlastP doesn't throw a fit
+write.table(psam_genic_classA_final, 
+                 file = here("data","02_hgt_index","orthofinder_psammoneis_wade","Psammoneis_japonica_classA_seqs_final.faa"), 
+                          sep = "\n", 
+                          quote = FALSE, 
+                          row.names = FALSE, 
+                          col.names = FALSE
+                          )
+```
+
+Here we will read in and compile/compare our analyses for PHYRE2 and subcellular localization
+
+```{r}
+#| label: import results ffrom subcellular localization and PHYRE2 analyses
+#| eval: true
+#| echo: false
+#| warning: false
+#| error: false
+#| output: false
+
+phyre2 <- 
+  read_delim(here("data","06_subcellular_localization_analyses","phyre2_short_summaryinfo"), delim = " | ") %>% 
+  rename("ID" = "Description") %>% 
+  janitor::clean_names() %>% 
+  arrange(desc(id)) %>% 
+  rename_with(.cols = everything(), function(x){paste0("phyre2.", x)}) %>% 
+  rename(id = 1) %>% 
+  mutate(phyre2.hit_info_1 = str_remove(phyre2.hit_info_1, "^PDB header:"))
+
+signalp <- 
+  read_tsv(here("data","06_subcellular_localization_analyses","signalp6_euk_prediction_results.tsv"), comment = "#") %>% 
+  janitor::clean_names() %>% 
+  arrange(desc(id)) %>% 
+  rename_with(.cols = everything(), function(x){paste0("signalp.", x)}) %>% 
+  rename(id = 1)
+
+targetp <- 
+  read_tsv(here("data","06_subcellular_localization_analyses","TargetP_prediction_summary_nonplant.txt"), comment = "#") %>% 
+  janitor::clean_names() %>% 
+  arrange(desc(id)) %>% 
+  rename_with(.cols = everything(), function(x){paste0("targetp.", x)}) %>% 
+  rename(id = 1)
+
+netGPI <- 
+  read_tsv(here("data","06_subcellular_localization_analyses","NetGPI1.1_output_summary.txt"), comment = "#") %>% 
+  janitor::clean_names() %>% 
+  arrange(desc(id)) %>% 
+  rename_with(.cols = everything(), function(x){paste0("netGPI.", x)}) %>% 
+  rename(id = 1)
+
+hectar <- 
+  read_tsv(here("data","06_subcellular_localization_analyses","Galaxy2-[HECTAR_results_on_Psammoneis_japonica_classA_seqs_final.faa].tsv"))  %>% 
+  dplyr::rename("ID" = "protein id") %>% 
+  janitor::clean_names() %>% 
+  arrange(desc(id)) %>% 
+  rename_with(.cols = everything(), function(x){paste0("heactar.", x)}) %>% 
+  rename(id = 1)
+
+deepLOC <- 
+  read_csv(here("data","06_subcellular_localization_analyses","DeepLoc2.0_results.csv")) %>% 
+  rename("ID" = "Protein_ID") %>% 
+  janitor::clean_names() %>% 
+  arrange(desc(id)) %>% 
+  rename_with(.cols = everything(), function(x){paste0("deepLOC.", x)}) %>% 
+  rename(id = 1)
+
+# now let's join all of our DFs into a single one by their ID columns
+
+#put all data frames into list
+df_list <- list(phyre2,
+                signalp,
+                targetp,
+                netGPI,
+                hectar,
+                deepLOC)
+
+#merge all data frames in list
+phyre2_subcell_loc <- 
+  df_list %>% 
+  reduce(full_join, by = "id")
+
+write_tsv(
+  phyre2_subcell_loc, 
+  file = here("data","06_subcellular_localization_analyses","results_combined_final.tsv"))
+```
+
 ------------------------------------------------------------------------
 
 # bacterial genes of interest and function
