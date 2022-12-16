@@ -2684,7 +2684,7 @@ donor_files_unsliced <-
 Finally, we will use NCBI BlastP to check our class A sequences.  
 First, we use the SLURM script 'submit_01_download_ncbi_nr_db_c1432.slurm' to download the most recent NR blast database and taxonomy database. 
 
-Next, we export our class A Psammoneis protein sequences into a FASTA file. 
+Next, we export our final 17 class A Psammoneis protein sequences into a FASTA file for protein homology classification using the [PHYRE2](http://www.sbg.bio.ic.ac.uk/phyre2/html/page.cgi?id=index) web service. We will also analyze these proteins using the following services: [TargetP](https://services.healthtech.dtu.dk/service.php?TargetP-2.0) to determine the Subcellular location of our proteins, [SignalP](https://services.healthtech.dtu.dk/service.php?SignalP) to examine the signal peptides of our sequences, [DeepLOC](https://services.healthtech.dtu.dk/service.php?DeepLoc-2.0) for the prediction of eukaryotic protein subcellular localization using deep learning, [NetGPI](https://services.healthtech.dtu.dk/service.php?NetGPI) for the prediction of GPI-anchoring in our proteins, and [HECTAR](https://webtools.sb-roscoff.fr) to assign proteins to five different categories of subcellular targeting: Signal peptides, type II signal anchors, chloroplast transit peptides, mitochondrion transit peptides and proteins which do not possess any N-terminal target peptide.
 
 
 ```{r}
@@ -2793,7 +2793,13 @@ df_list <- list(phyre2,
 #merge all data frames in list
 phyre2_subcell_loc <- 
   df_list %>% 
-  reduce(full_join, by = "id")
+  reduce(full_join, by = "id") %>% 
+   left_join(., 
+            (blastp_results_final %>% 
+               rename(id = qseqid) %>% 
+               select(id, orthogroup)), 
+            by = "id") %>% 
+  arrange(orthogroup)
 
 write_tsv(
   phyre2_subcell_loc, 
