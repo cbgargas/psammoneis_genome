@@ -17,6 +17,10 @@ format:
 #| include: false
 knitr::opts_chunk$set(echo = TRUE)
 pkgs <- c(
+  "ape",
+  "forcats",
+  "aplot",
+  "grafify",
   "report",
   "skimr",
   "janitor",
@@ -2918,6 +2922,117 @@ interpro_results <-
 ```
 
 # Final Figures
+
+To generate the phylogeny for figure 2, we used the species tree inferred by OrthoFinder. The name of their algorithm is STAG (https://doi.org/10.1101/267914) and is described in a preprint. I then dated the species tree using TreePL (https://github.com/blackrim/treePL, https://academic.oup.com/bioinformatics/article/28/20/2689/203074). The input/output files from TreePL are in the zip folder. In the treepl_config.txt file, it lists the commands and you can find listed the min/max calibration times for the MRCA node of the ROOT, DIATOMS, and NITZSCHIA. The min/max times I took from Teofil Nakov’s paper for the same corresponding nodes (https://nph.onlinelibrary.wiley.com/doi/full/10.1111/nph.15137).
+```{r}
+#| label: OG phylogeny with taxonomy labels and repeat percentages
+#| eval: true
+#| echo: false
+#| warning: false
+#| error: false
+#| output: false
+
+## READ IN DIATOM TREE
+tree <- read.tree(here("figs","psammoneis-repeats-figure","SpeciesTree_rooted.dated.tre"))
+tree$node.label <- NULL
+tree$tip.label <- gsub('_',' ', tree$tip.label)
+plot(tree)
+
+## READ IN DATA
+table <- read.csv(here("figs","psammoneis-repeats-figure","genome-repeats-summary.csv"),header=T)
+
+## SELECT THE ELEMENT LENGTHS
+select <- table %>%
+  select(species, coding_bp, repeats_bp, other_bp)
+
+## SELECT THE REPEAT PROPORTIONS
+select2 <- table %>%
+  select(species, LINE_perc, LTR_perc, DNA_perc,
+         Unclass_perc, Simple_perc, other_TE_perc)
+
+## COLORS
+colors1 <- c('coding_bp'='black', 'repeats_bp'='grey50', 'other_bp'='grey75')
+colors2 <- c('LINE_perc'='#E69F00', 'LTR_perc'='#56B4E9', 'DNA_perc'='#009E73',
+             'Simple_perc'='#F0E442', 'other_TE_perc'='#D55E00', 'Unclass_perc'='#CC79A7')
+
+## MAKE BARPLOT OF GENOME CONTENT
+p1 <- select %>% pivot_longer(., !c(species), 
+                              names_to='Variable',
+                              values_to='Value') %>%
+  mutate(Variable=factor(Variable)) %>%
+  mutate(Variable=fct_relevel(Variable, 'other_bp','repeats_bp','coding_bp')) %>%
+  ggplot(aes(x=species, y=Value)) +
+  geom_bar(aes(fill=Variable), stat='identity', position='stack') +
+  coord_flip() +
+  scale_y_continuous(breaks=c(0,50e6,100e6,150e6,200e6), labels=c(0,50,100,150,200)) +
+  #scale_x_discrete() +
+  scale_fill_manual(values=colors1, labels=c('coding','repetitive','non-coding,\nnon-repetitive')) +
+  guides(fill=guide_legend(title='')) +
+  theme_minimal() +
+  theme(legend.position='right',
+        axis.text.y=element_blank(),
+        panel.grid.minor.x=element_blank(),
+        panel.grid.major.y=element_blank()) +
+  #scale_x_discrete(limits=rev) +
+  labs(x='', y='Assembly Length (Mb)')
+
+
+## MAKE BARPLOT OF REPEAT PROPORTIONS
+p2 <- select2 %>% pivot_longer(., !c(species), 
+                              names_to='Variable',
+                              values_to='Value') %>%
+  mutate(Variable=factor(Variable)) %>%
+  mutate(Variable=fct_relevel(Variable, 'LINE_perc','LTR_perc','DNA_perc',
+                              'Simple_perc','other_TE_perc','Unclass_perc')) %>%
+  ggplot(aes(y=species, x=Value, fill=Variable)) +
+  geom_bar(stat='identity', position='fill') +
+  scale_x_continuous() +
+  #coord_flip() +
+  scale_fill_manual(values=colors2, labels=c('LINE','LTR','DNA',
+                                             'simple','others','unclassified')) +
+  theme_minimal() +
+  theme(axis.text.y=element_blank(),
+        panel.grid=element_blank(),
+        legend.position='right') +
+  guides(fill=guide_legend(title='')) +
+  labs(x='Percent of Repetitive', y='')
+  #scale_fill_manual(values=colors2) +
+  #guides(fill='none') +
+  #theme_bw() +
+  #theme(legend.position='bottom',
+  #      axis.text.y=element_blank()) +
+  #labs(x='', y='percent of repetitive elements') +
+  #coord_flip()
+
+## PLOT TREE
+g <- ggtree(tree, right=T, size=1) +
+  coord_cartesian(clip='off') +
+  geom_tiplab(size=3.5, align=T, fontface='italic', hjust=-0.05) +
+  xlim_tree(115) +
+  theme_tree2(plot.margin=margin(0,0,0,0)) +
+  xlab('Million Years Ago (Ma)')
+
+g2 <- revts(g) +
+  scale_x_continuous(breaks=c(seq(0,-250,-50)), labels=c(seq(0,250,50)))
+
+#g3 <- g2 + geom_text2(aes(subset=!isTip, label=node), hjust=-.3)
+g3 <- ggtree::rotate(g2, 17)
+
+g4 <- g3 + geom_label(aes(-120,4.5), label='Raphid\npennates', size=3) +
+  geom_label(aes(-65,1), label='Araphid\npennates', size=3) +
+  geom_label(aes(-108, 9.5), label='Thalassiosirales', size=3) +
+  geom_label(aes(-200, 6.1), label='Diatoms', size=3)
+
+## PLOT TREE AND BARPLOT TOGETHER
+#p3 <- p1 %>% insert_left(g4, width=1.5)
+#p4 <- p3 %>% insert_right(p2)
+p3 <- plot_list(g4, p1, p2, widths=c(0.4,0.35,0.25),
+                labels=c('A','B','C'), byrow=T)
+
+p3 <- p2 %>% insert_left(p1, width=2) %>% insert_left(g4, width=3)
+
+ggsave(filename=here("figs","fig_2_OG_phylo_assemblies_repetitives.png"), p3, device='png', height=6, width=12)
+```
 
 ```{r}
 #| label: orf_size_range
