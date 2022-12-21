@@ -2921,6 +2921,112 @@ interpro_results <-
 
 ```
 
+# _Psammoneis japonica_ and diatom gene family evolution with CAFE
+--
+##### Software used:
+* OrthoFinder (version 2.4.0)
+* CAFE (version 5.0.0)
+* Python
+* treePL
+
+--
+##### List of genomes:
+| Genome | Version | Proteins |
+| ------ | ------- | -------- |
+| Cyclotella cryptica | 2.0 | 21,250
+| Ectocarpus siliculosus | 1.0 | 16,269
+| Fistulifera solaris | 1.0 | 20,426
+| Fragilariopsis cylindrus | 1.0 | 21,066
+| Nannochloropsis gaditana | 1.0 | 10,929
+| Nitzschia sp. Nitz4 | 1.0 | 9,464
+| Phaeodactylum tricornutum | 2.0 | 10,408
+| Psammoneis japonica | 1.0 | 15,170
+| Pseudo-nitzschia multiseries | 1.0 | 19,703
+| Pseudo-nitzschia multistriata | 1.0 | 12,152
+| Seminavis robusta | 1.0 | 35,996
+| Thalassiosira pseudonana | 3.0 | 11,673
+
+### 1. Run OrthoFinder
+```
+orthofinder -t 12 -a 8 -M msa -S diamond -A mafft -T fasttree -f .
+```
+
+
+### 2. Edit `Orthogroups.GeneCount.tsv` file
+* Remove last column titled "Total".
+* Add a new first column titled "Desc" that contains gene annotation information or (null).
+* Rename species columns to short one-word names.
+* Filter the edited file to remove gene families where one or more species have >= 100 gene copies:
+
+```
+python3 clade_and_size_filter.py -i Orthogroups.GeneCount.CAFE.txt -o Orthogroups.GeneCount.CAFE.filtered.txt -s
+```
+
+
+### 3. Estimate a species tree
+* Use `SpeciesTree_rooted.tree` output by OrthoFinder and STAG.
+* Make the species tree ultrametric using treePL.
+* Best smoothing parameter is 0.01.
+
+```
+treepl treepl_config
+```
+###### Output: "SpeciesTree_rooted.dated.tree"
+
+
+### 4. Run CAFE initially under a single lambda model
+* Gene families not present in MRCA are filtered: 15503 => 6160.
+* Estimate an error model to account for genome assembly or annotation error.
+
+```
+cafexp -i Orthogroups.GeneCount.CAFE.filtered.txt -t SpeciesTree_rooted.dated.tree -p -e
+```
+
+
+### 5. Run CAFE with a single lambda and k=2 to k=10 gamma rate categories
+* lambda = birth-death rate for gene gain/loss
+* alpha = gamma distribution shape parameter
+* Poisson distribution for root frequency
+
+```
+cafexp -i OrthoGroups.GeneCount.CAFE.filtered.txt -t SpeciesTree_rooted.dated.tre -p -eBase_error_model.txt -o run1 -k 1
+```
+
+| Model | -lnL | lambda | alpha |
+| ----- | ---------- | ------ | ----- |
+| global | 81332.309 | 0.0014 | - |
+| k2 | 78053.501 | 0.0023 | 0.61 |
+| k3 | 77425.757 | 0.0024 | 0.48 |
+| k4 | 77232.543 | 0.0021 | 0.49 |
+| k5 | 77157.673 | 0.0019 | 0.51 |
+| k6 | 77124.276 | 0.0017 | 0.54 |
+| k7 | 77109.302 | 0.0017 | 0.57 |
+| **k8** | **77103.864** | **0.0016** | **0.57** |
+| k9 | 77107.726 | 0.0016 | 0.65 |
+| k10 | 77110.541 | 0.0016 | 0.68 |
+
+##### The global lambda model with k=8 gamma rate categories has the highest -lnL.
+
+##### Do additional runs of the k8 model to ensure convergence
+
+
+### 6. Run CAFE with two lambda and k=2 to k=10 gamma rate categories
+* separate lambda for (1) outgroups, (2) centrics, and (3) pennates
+
+```
+cafexp -i OrthoGroups.GeneCount.CAFE.filtered.txt -t SpeciesTree_rooted.dated.tre -eBase_error_model.txt -o multi-lambda -y SpeciesTree_rooted.dated.multi-lambda.tre -p
+```
+
+| Model | -lnL | lambda | alpha |
+| ----- | ---------- | ------ | ----- |
+| multi1 | 80265.478 | 0.0009, 0.0010, 0.0019 | - |
+| multi2 | 77090.243 | 0.0012, 0.0017, 0.0034 | 0.67 |
+| multi3 | 76857.037 | 0.0009, 0.0011, 0.0022 | 0.50 |
+
+_These multi lambda and multi rate models did not converge between runs._
+
+
+
 # Final Figures
 
 To generate the phylogeny for figure 2, we used the species tree inferred by OrthoFinder. The name of their algorithm is STAG (https://doi.org/10.1101/267914) and is described in a preprint. I then dated the species tree using TreePL (https://github.com/blackrim/treePL, https://academic.oup.com/bioinformatics/article/28/20/2689/203074). The input/output files from TreePL are in the zip folder. In the treepl_config.txt file, it lists the commands and you can find listed the min/max calibration times for the MRCA node of the ROOT, DIATOMS, and NITZSCHIA. The min/max times I took from Teofil Nakov’s paper for the same corresponding nodes (https://nph.onlinelibrary.wiley.com/doi/full/10.1111/nph.15137).
