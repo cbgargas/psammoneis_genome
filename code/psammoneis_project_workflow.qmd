@@ -2712,14 +2712,14 @@ psam_genic_classA_final <-
   tibble()
 
 # now we filter the Psammoneis CDS seqs with the class A qseqids
-psam_genic_classA_final <-
+psam_genic_classA_final_fasta <-
   tibble(label = names(psam_CDS), sequence = psam_CDS) %>% 
   filter(label %in% psam_genic_classA_final$qseqid) %>% 
   mutate(label = paste(">", label, sep = ""))
 
 
 # split up the psam_CDS_classA_NONbacgen file into chunks so that ncbi BlastP doesn't throw a fit
-write.table(psam_genic_classA_final, 
+write.table(psam_genic_classA_final_fasta, 
                  file = here("data","02_hgt_index","orthofinder_psammoneis_wade","Psammoneis_japonica_classA_seqs_final.faa"), 
                           sep = "\n", 
                           quote = FALSE, 
@@ -2752,6 +2752,19 @@ signalp <-
   janitor::clean_names() %>% 
   arrange(desc(id)) %>% 
   rename_with(.cols = everything(), function(x){paste0("signalp.", x)}) %>% 
+  rename(id = 1)
+
+asaFind <- 
+  tibble(label = names(psam_CDS), sequence = psam_CDS) %>% 
+  filter(label %in% psam_genic_classA_final$qseqid) %>% 
+  left_join(., 
+            read_tsv(here("data","06_subcellular_localization_analyses","psam_final_asafind_out.txt")),
+            by = c("sequence" = "Protein sequence")) %>% 
+  select(-Identifier) %>% 
+  rename("ID" = "label") %>% 
+  janitor::clean_names() %>% 
+  arrange(desc(id)) %>% 
+  rename_with(.cols = everything(), function(x){paste0("ASAFind.", x)}) %>% 
   rename(id = 1)
 
 targetp <- 
@@ -2789,6 +2802,7 @@ deepLOC <-
 #put all data frames into list
 df_list <- list(phyre2,
                 signalp,
+                asaFind,
                 targetp,
                 netGPI,
                 hectar,
