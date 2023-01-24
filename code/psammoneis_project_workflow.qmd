@@ -29,6 +29,7 @@ pkgs <- c(
   "ggdist",
   "ggtext",
   "ggside",
+  "ggtree",
   "GenomicRanges",
   "here",
   "reshape2",
@@ -50,6 +51,7 @@ pkgs_tidylog <- c(
   "ggdist",
   "ggtext",
   "ggside",
+  "ggtree",
   "GenomicRanges",
   "here",
   "reshape2",
@@ -311,7 +313,7 @@ ORF_headers <-
   ) %>% # split coords_strand
   dplyr::rename(
     coords = coords_strand
-  )
+  ) 
 
 uniprot_reviewed <-
   read_tsv(
@@ -374,7 +376,8 @@ bac_gff <-
   separate(
     col = attributes,
     into = c("bac_gen_peg", "bac_gen_gene_annotation"),
-    sep = ";"
+    sep = ";",
+    extra = "drop"
   ) %>% 
   mutate(
     bac_gen_gene_annotation = str_remove(
@@ -493,13 +496,17 @@ file3_uniprot <-
     sseqid_d,
     sep = "\\|",
     into = c("uniprot_prefix_d", "uniprot_id_d", "product_d"),
-    remove = F
+    remove = F, 
+    fill = "right",
+    convert = TRUE
   ) %>% # uniprot hits
   separate(
     sseqid_d,
     sep = "\\.",
     into = c("chrm_bac", "bac_gen_peg"),
-    remove = T
+    remove = T,
+    fill = "right",
+    convert = FALSE
   ) %>% # bacterial genome hits
   mutate(
     length_orf = str_replace_all(string = length_orf, pattern = "[/(/)$]", replacement = "")
@@ -3039,7 +3046,53 @@ cafexp -i OrthoGroups.GeneCount.CAFE.filtered.txt -t SpeciesTree_rooted.dated.tr
 
 _These multi lambda and multi rate models did not converge between runs._
 
+# Transposable Element density in relation to genic and intergenic HGT candidates
+```{r}
+#| label: TE element density
+#| eval: true
+#| echo: false
+#| warning: false
+#| error: false
+#| output: false
 
+genic_TE_density <- 
+  read_tsv(here("data","09_TE_density","psamm_final.round4.all.Genes.flanking.10kb.TE.overlapping.tsv"),
+           col_names = c("contig","start_position","end_position","gene_name","TE_density"))
+
+genic_TE_density %>% 
+  select(TE_density) %>% 
+  table()
+
+# filter out ORF headers to include only intergenic HGT candidates and then create a BED file of coordinates
+intergenic_ORF_BED <-   
+  ORF_headers %>%
+  filter(qseqid %in% file3_uniprot_prok_hits_0Fthru3F$qseqid) %>% 
+  separate(length_orf, into = c("contig_ig_start","contig_ig_stop"), sep = "-", convert = TRUE) %>% 
+  separate(coords, into = c("coords_start","coords_stop"), sep = "-", convert = TRUE) %>% 
+  mutate(coords_start = coords_start+1 , coords_stop = coords_stop+1) %>% # have to add one to each so that indexing in R is possible. no need to +1 to bedtools range as bedtools uses zero-based indexing. 
+  mutate(contig_range = map2(contig_ig_start, contig_ig_stop, `:`)) %>% 
+  # now we go through the list with the coords for each ORF
+  rowwise() %>% # have to use rowwise to be able to use coords_start/end to pull values out of contig range
+  mutate(orf_coord_start = contig_range[coords_start], orf_coord_stop = contig_range[coords_stop]) %>% 
+  separate(qseqid, into = c("contig","junk"), sep = ":", remove = FALSE) %>% 
+  select(contig, orf_coord_start, orf_coord_stop, qseqid)
+  # rowwise %>% # or you can use this to apply the start:end as a list into a new column
+  # mutate(contig_range = list(contig_ig_start:contig_ig_stop))
+  # 
+# you might need to add one to the contig_ig_start/ends. check out what orfipy and bedtools do to verify this. Fucking Python 0 start bullshit
+# 
+write_tsv(intergenic_ORF_BED, here("data","09_TE_density","psamm_final.round4.all.intergenicORFs.bed"), col_names = FALSE)
+
+
+intergenic_TE_density <- 
+  read_tsv(
+    here("data",
+         "09_TE_density",
+         "psamm_final.round4.all.intergenicORFs.flanking.10kb.TE.overlapping.tsv"),
+    col_names = c("contig","start_position","end_position","gene_name","TE_density"))
+
+
+```
 
 # Final Figures
 
