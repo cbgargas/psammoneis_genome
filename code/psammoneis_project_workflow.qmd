@@ -3047,6 +3047,42 @@ cafexp -i OrthoGroups.GeneCount.CAFE.filtered.txt -t SpeciesTree_rooted.dated.tr
 _These multi lambda and multi rate models did not converge between runs._
 
 # Transposable Element density in relation to genic and intergenic HGT candidates
+
+To determine whether our HGT candidates have a higher density of transposable elements than other areas of the genome, I used the the following code and BEDtools. I generated three separte bedfiles for the following: gene (gene annotated), CDS (mRNA annotated), and intergenic ORFs (required additional data processing in R to generate from orfipy header files)
+```
+# Create a BED file for TE locations. Column 1 = contig name; Column 2 = start position; Column 3 = end position; Column 4 = TE type.
+cat psamm_final.round4.all.gff \ # cat the annotation gff file
+awk '($3 == "match" && $2 == "repeatmasker") {print $0}' \ # get the lines corresponding to repeat annotations
+| awk '/DNA/ || /LTR/ || /LINE/ || /SINE/ ' \ # get the lines containing TE elements
+| awk -v OFS='\t' '{ split($9,a,";"); split(a[2],b,":"); split(b[3],c,"%"); print $1,$4,$5,c[1] }' \ # do some text splitting 
+> psamm_final.round4.all.TEs.bed
+
+# Create a BED file for gene locations. Column 1 = contig name; Column 2 = start position; Column 3 = end position; Column 4 = gene name.
+cat psamm_final.round4.all.gff \ # cat the annotation gff file
+| awk '{ if ($3 == "gene") print $0 }' \ # get the lines corresponding to genes
+| awk -v OFS='\t' '{ split($9,a,";"); split(a[2],b,"="); print $1,$4,$5,b[2] }' \ # do some text splitting
+> psamm_final.round4.all.Genes.bed
+
+# Create a list of contig/scaffold sizes
+samtools faidx psam.final_assembly.Quiver_Pilon_Reapr_GapCloser.fa # create samtools index
+cut -f 1,2 psam.final_assembly.Quiver_Pilon_Reapr_GapCloser.fa.fai > chrom.sizes # use cut to get the contig names and lengths
+
+# Create a 10kb window around each gene location
+bedtools slop \
+-i psamm_final.round4.all.Genes.bed \ # the genes BED file
+-g chrom.sizes \ # the contig sizes
+-b 10000 \ # the size of the flanking window around each gene
+> psamm_final.round4.all.Genes.flanking.10kb.bed
+
+# Report the number of overlapping TE elements found in the 10kb window around each gene
+bedtools intersect \
+-a psamm_final.round4.all.Genes.flanking.10kb.bed \ # the genes BED file with start/end positions that have +10kb
+-b psamm_final.round4.all.TEs.bed \ # the TE elements BED file
+-c # count the number of TEs overlapping with each gene window
+> psamm_final.round4.all.Genes.flanking.10kb.TE.overlapping.tsv # redirect output to a file
+
+```
+
 ```{r}
 #| label: TE element density
 #| eval: true
@@ -3093,9 +3129,8 @@ intergenic_ORF_BED <-
   select(contig, orf_coord_start, orf_coord_stop, qseqid)
   # rowwise %>% # or you can use this to apply the start:end as a list into a new column
   # mutate(contig_range = list(contig_ig_start:contig_ig_stop))
-  # 
-# you might need to add one to the contig_ig_start/ends. check out what orfipy and bedtools do to verify this. Fucking Python 0 start bullshit
-# 
+
+# Write our intergenic ORF bedfile for our ORF HGT candidates
 write_tsv(intergenic_ORF_BED, here("data","09_TE_density","psamm_final.round4.all.intergenicORFs.bed"), col_names = FALSE)
 
 # read in the output TE file from our bedtools analyses
