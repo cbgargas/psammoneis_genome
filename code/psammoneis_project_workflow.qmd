@@ -3055,13 +3055,28 @@ _These multi lambda and multi rate models did not converge between runs._
 #| error: false
 #| output: false
 
+# import general TE density results for all annotated genes
 genic_TE_density <- 
   read_tsv(here("data","09_TE_density","psamm_final.round4.all.Genes.flanking.10kb.TE.overlapping.tsv"),
-           col_names = c("contig","start_position","end_position","gene_name","TE_density"))
+           col_names = c("contig","start_position","end_position","gene_name","TE_density")) %>% 
+  mutate(gene_name = paste("Psammoneisjap_",gene_name, sep = ""))
 
 genic_TE_density %>% 
+  filter(gene_name %in% blastp_results_final$qseqid) %>% 
   select(TE_density) %>% 
   table()
+
+# Now we import TE desnity for all CDS annotated genes in P. japonica
+genic_mRNA_TE_density <- 
+  read_tsv(here("data","09_TE_density","psamm_final.round4.all.mRNA.CDS.flanking.10kb.TE.overlapping.tsv"),
+           col_names = c("contig","start_position","end_position","gene_name","TE_density")) %>% 
+  mutate(gene_name = paste("Psammoneisjap_",gene_name, sep = ""))
+
+genic_mRNA_TE_density %>% 
+  filter(gene_name %in% blastp_results_final$qseqid) %>% 
+  select(TE_density) %>% 
+  table()
+
 
 # filter out ORF headers to include only intergenic HGT candidates and then create a BED file of coordinates
 intergenic_ORF_BED <-   
@@ -3083,7 +3098,7 @@ intergenic_ORF_BED <-
 # 
 write_tsv(intergenic_ORF_BED, here("data","09_TE_density","psamm_final.round4.all.intergenicORFs.bed"), col_names = FALSE)
 
-
+# read in the output TE file from our bedtools analyses
 intergenic_TE_density <- 
   read_tsv(
     here("data",
@@ -3091,6 +3106,9 @@ intergenic_TE_density <-
          "psamm_final.round4.all.intergenicORFs.flanking.10kb.TE.overlapping.tsv"),
     col_names = c("contig","start_position","end_position","gene_name","TE_density"))
 
+intergenic_TE_density %>% 
+  select(TE_density) %>% 
+  table()
 
 ```
 
