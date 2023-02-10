@@ -1344,7 +1344,7 @@ psamm_subsampled <-
 
 write.table(psamm_subsampled,
   sep = "\n",
-  file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/sequence_ordination/psam_genic_subsampled.fa",
+  file = here("data","01_psam_intergenic_HGT_index","sequence_ordination","psam_genic_subsampled.fa"),
   quote = FALSE, row.names = FALSE, col.names = FALSE
 )
 
@@ -1360,12 +1360,33 @@ ORFs_filt <-
 
 write.table(ORFs_filt[, 1:2],
   sep = "\n",
-  file = "/Users/cbg/01_projects/psammoneis_genome_and_bacteria/data/01_psam_intergenic_HGT_index/sequence_ordination/psamm_prokaryote_candidate_ORFs_filtered.fa",
+  file = here("data","01_psam_intergenic_HGT_index","sequence_ordination","psamm_prokaryote_candidate_ORFs_filtered.fa"),
+  quote = FALSE, row.names = FALSE, col.names = FALSE
+)
+
+# read in prtein version of ORFs
+ORFs_AA <-
+  read.fasta(file = here("data","01_psam_intergenic_HGT_index","psam_genome","orfipy_psamm_complement_intergenic.fa_out","psamm_complement_ORFs_orfipy.faa"), as.string = T, seqtype = "AA")
+
+# filter those seqs to get jsut our prokaryote HGT candidates
+ORFs_AA_filt <-
+  as.data.frame(do.call(rbind, ORFs_AA)) %>%
+  rownames_to_column(var = "V2") %>%
+  dplyr::filter(V2 %in% (file3_uniprot %>%
+    filter(domain_assignment == "prokaryote" | domain_assignment == "prokaryote_strong") %>%
+    pull(qseqid))) %>%
+  mutate(V2 = paste(">", V2, sep = "")) %>% # add the carrot to make it the fasta header
+  mutate(V1 = str_replace(V1, "[:punct:]$", "")) # remove the * cstop character so that muscle dowsn't throw a fit
+
+# write fasta of proteins for final ncbi blastp search
+write.table(ORFs_AA_filt[, 1:2],
+  sep = "\n",
+  file = here("data","01_psam_intergenic_HGT_index","ncbi_blastp_final","psamm_prokaryote_hgt_candidate_ORFs.faa"),
   quote = FALSE, row.names = FALSE, col.names = FALSE
 )
 
 # rm() objects that aren't needed
-rm(ORFs, ORFs_filt, psamm_cds, psamm_subsampled)
+rm(ORFs, ORFs_AA, ORFs_filt, ORFs_AA_filt, psamm_cds, psamm_subsampled)
 
 # read in the filtered and subsampled files as codon tables
 ORFs <-
@@ -1789,6 +1810,22 @@ col.names = c("chrm_bac","source","feature_type","feature_start","feature_end","
   mutate(chrm_bac = str_remove(chrm_bac, pattern = "^00000")) 
 
 # read in our orthogroup information
+orthogroups_total <- 
+  read_tsv(here::here('data','02_hgt_index','orthofinder_psammoneis_wade','OrthoFinder','Results_May12','Orthogroups','Orthogroups.tsv')) %>% 
+  as.data.frame() %>% 
+  clean_names()
+
+orthogroups_cafe <- 
+  read_tsv(here::here('data','08_gene_families','CAFE','Orthogroups.GeneCount.CAFE.txt')) %>% 
+  as.data.frame() %>% 
+  clean_names() 
+  
+orthogroups_cafe_psammoneis <- 
+  read_tsv(here::here('data','08_gene_families','CAFE','Orthogroups.GeneCount.CAFE.txt')) %>% 
+  as.data.frame() %>% 
+  clean_names() %>% 
+  filter(psammoneis != 0)
+  
 orthogroups <- 
   read_tsv(here::here('data','02_hgt_index','orthofinder_psammoneis_wade','OrthoFinder','Results_May12','Orthogroups','Orthogroups_Psam_filtered.tsv')) %>% 
   as.data.frame() %>% 
@@ -2229,6 +2266,9 @@ naniar::gg_miss_upset(orthogroups, nsets = 12, order.by = "freq")
 orthogroups_psam_cols <-
   colnames(orthogroups %>% select(-psammoneis_japonica, -orthogroup))
 
+orthogroups_psam_CAFE_cols <-
+  colnames(orthogroups_cafe %>% select(-c(psammoneis, orthogroup, desc)))
+
 # Orthogroups with multiple diatoms
 orthogroups_diatom_only <-
   orthogroups %>% 
@@ -2246,6 +2286,12 @@ psam_only_orths <-
   filter(if_all(all_of(orthogroups_psam_cols), ~ is.na(.))) %>% 
   select(orthogroup, psammoneis_japonica) %>% 
   mutate(gene_count = str_count(psammoneis_japonica, ',')+1)
+
+psam_only_orths_CAFE <-  
+  orthogroups_cafe %>% 
+  filter(if_all(all_of(orthogroups_psam_CAFE_cols), ~ . == 0)) %>% 
+  select(orthogroup, psammoneis) %>% 
+  mutate(gene_count = str_count(psammoneis, ',')+1)
 
 # see which of our psam only OGs are in our HGT output
 left_join(psam_only_orths, hgt_index_output_orth_prok_psam, by = "orthogroup")%>%
@@ -3106,11 +3152,13 @@ genic_TE_density %>%
 genic_mRNA_TE_density <- 
   read_tsv(here("data","09_TE_density","psamm_final.round4.all.mRNA.CDS.flanking.10kb.TE.overlapping.tsv"),
            col_names = c("contig","start_position","end_position","gene_name","TE_density")) %>% 
-  mutate(gene_name = paste("Psammoneisjap_",gene_name, sep = ""))
+  mutate(gene_name = paste("Psammoneisjap_",gene_name, sep = "")) %>% 
+    filter(gene_name %in% blastp_results_final$qseqid) %>% 
+  group_by(gene_name) %>% 
+    slice_head()
 
 genic_mRNA_TE_density %>% 
-  filter(gene_name %in% blastp_results_final$qseqid) %>% 
-  select(TE_density) %>% 
+  select(TE_density, gene_name) %>% 
   table()
 
 
