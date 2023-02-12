@@ -1421,7 +1421,7 @@ ORF_blastp_results <-
   left_join( # join our blastp results with our prot.accession2taxid data from the parquet files
     ORF_ncbi_blastp,
     (prot.accession2taxid %>% 
-  filter(accession.ver %in% blastp_results$acc.ver) %>% 
+  filter(accession.ver %in% ORF_ncbi_blastp$acc.ver) %>% 
   collect()),
   by = c("acc.ver" = "accession.ver")
   ) %>% 
