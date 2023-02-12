@@ -1385,6 +1385,62 @@ write.table(ORFs_AA_filt[, 1:2],
   quote = FALSE, row.names = FALSE, col.names = FALSE
 )
 
+
+# Read in the NCBI BlastP results
+ORF_ncbi_blastp <-
+  read_tsv(
+    here("data","01_psam_intergenic_HGT_index","ncbi_blastp_final","ncbi_blastp_output","Psammoneis_japonica_classA_seqs_blastp_out.tsv"),
+    col_names = c("qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue", "bitscore", "sacc", "staxids", "sscinames"), 
+    progress = T) %>% 
+  mutate(acc.ver = str_remove_all(sseqid, paste(c("^[:alpha:]+\\|+","\\|$","\\|[:alpha:]$"), collapse="|"))) 
+
+
+# open our arrow datasets
+prot.accession2taxid <- 
+  open_dataset("/Users/cbg/local/ncbi/prot.accession2taxid.FULL_2022-10-09_parquet")
+
+
+# read in taxid categories file
+taxid_categories <-
+  read_tsv(
+    file = "/Users/cbg/local/ncbi/categories.dmp",
+    col_names = c("category", "taxid_species_level", "taxid"), 
+    progress = T) %>% 
+  mutate(category_expanded = case_when(
+  category == "A" ~ "Archaea",
+  category == "B" ~ "Bacteria",
+  category == "E" ~ "Eukaryota",
+  category == "V" ~ "Viruses and Viroids",
+  category == "U" ~ "Unclassified",
+  category == "O" ~ "Other"
+  ))
+
+
+# join our datasets
+ORF_blastp_results <- 
+  left_join( # join our blastp results with our prot.accession2taxid data from the parquet files
+    ORF_ncbi_blastp,
+    (prot.accession2taxid %>% 
+  filter(accession.ver %in% blastp_results$acc.ver) %>% 
+  collect()),
+  by = c("acc.ver" = "accession.ver")
+  ) %>% 
+  left_join(., taxid_categories, by = "taxid") # Join our taxid_categories file to the above
+
+  
+blastp_results_joined <- 
+  left_join(blastp_results,
+            (blastp_results %>% 
+               group_by(qseqid) %>% 
+               select(qseqid, category_expanded) %>% 
+               table() %>% 
+               as.data.frame() %>% 
+               pivot_wider(names_from = category_expanded, values_from = Freq) %>% 
+               mutate( # now we make a column to calculate the total hits to each qseqid
+                 total_hits = rowSums(select(., contains(c("Arc","Bac","Euk"))))
+                 )),
+            by = "qseqid")
+
 # rm() objects that aren't needed
 rm(ORFs, ORFs_AA, ORFs_filt, ORFs_AA_filt, psamm_cds, psamm_subsampled)
 
