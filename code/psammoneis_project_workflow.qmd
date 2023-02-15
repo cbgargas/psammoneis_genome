@@ -1428,9 +1428,9 @@ ORF_blastp_results <-
   left_join(., taxid_categories, by = "taxid") # Join our taxid_categories file to the above
 
   
-blastp_results_joined <- 
-  left_join(blastp_results,
-            (blastp_results %>% 
+ORF_blastp_results_joined <- 
+  left_join(ORF_blastp_results,
+            (ORF_blastp_results %>% 
                group_by(qseqid) %>% 
                select(qseqid, category_expanded) %>% 
                table() %>% 
@@ -1439,7 +1439,20 @@ blastp_results_joined <-
                mutate( # now we make a column to calculate the total hits to each qseqid
                  total_hits = rowSums(select(., contains(c("Arc","Bac","Euk"))))
                  )),
-            by = "qseqid")
+            by = "qseqid") %>% 
+  group_by(qseqid) %>% 
+  slice_max(bitscore, n = 1, with_ties = FALSE) %>% 
+  ungroup() %>% 
+  left_join(., ORF_headers, by = "qseqid") %>% 
+  filter(category == "B")
+
+ORF_blastp_results_joined %>% 
+  filter(!qseqid %in% file3_uniprot_prok_hits_0Fthru3F$qseqid) %>% 
+  dplyr::count(category)
+
+test <-
+  ORF_blastp_results_joined %>% 
+  filter(qseqid %in% file3_uniprot_prok_hits_0Fthru3F$qseqid)
 
 # rm() objects that aren't needed
 rm(ORFs, ORFs_AA, ORFs_filt, ORFs_AA_filt, psamm_cds, psamm_subsampled)
