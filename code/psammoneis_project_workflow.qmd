@@ -1882,7 +1882,9 @@ col.names = c("chrm_bac","source","feature_type","feature_start","feature_end","
 orthogroups_total <- 
   read_tsv(here::here('data','02_hgt_index','orthofinder_psammoneis_wade','OrthoFinder','Results_May12','Orthogroups','Orthogroups.tsv')) %>% 
   as.data.frame() %>% 
-  clean_names()
+  clean_names() %>% 
+  mutate(across(2:12, ~ str_count(.x, ',')+1, .names = "{col}_total_genes")) %>% # use across to calculate # of genes per taxon in each OG and write the output as new columns
+  mutate(across(ends_with("_total_genes"), ~ ifelse(is.na(.x), 0, .x))) # go through all of the newly created columns and convert NAs to zeroes
 
 orthogroups_cafe <- 
   read_tsv(here::here('data','08_gene_families','CAFE','Orthogroups.GeneCount.CAFE.txt')) %>% 
@@ -1895,20 +1897,21 @@ orthogroups_cafe_psammoneis <-
   clean_names() %>% 
   filter(psammoneis != 0)
   
-orthogroups <- 
+orthogroups_psam <- 
   read_tsv(here::here('data','02_hgt_index','orthofinder_psammoneis_wade','OrthoFinder','Results_May12','Orthogroups','Orthogroups_Psam_filtered.tsv')) %>% 
   as.data.frame() %>% 
-  clean_names()
+  clean_names() %>% 
+  mutate(psam_gene_count = str_count(psammoneis_japonica, ',')+1) # add this to check that we have the correct total for psam coding genes
+orthogroups_psam %>% 
+  summarise(psam_gene_total = sum(psam_gene_count)) # check that we have 15170 genes in total
 
+# read in unnassigned genes from orthofidner
 orthogroups_unassigned <- 
     read_tsv(here::here('data','02_hgt_index','orthofinder_psammoneis_wade','OrthoFinder','Results_May12','Orthogroups','Orthogroups_UnassignedGenes.tsv')) %>% 
   as.data.frame() %>% 
   clean_names()
 
-# check that all of the Psammoneis genes are present 
-orthogroups %>% 
-  mutate(psam_gene_count = str_count(psammoneis_japonica, ',')+1) %>% 
-  summarise(psam_gene_total = sum(psam_gene_count))
+
 
 # read in UniProt information for each sseqid in our blast databases
 uniprot_reviewed <-
@@ -2333,16 +2336,16 @@ naniar::gg_miss_upset(orthogroups, nsets = 12, order.by = "freq")
 
 # columns that would need to be NA for Psammoneis only filtering
 orthogroups_psam_cols <-
-  colnames(orthogroups %>% select(-psammoneis_japonica, -orthogroup))
+  colnames(orthogroups_psam %>% select(-psammoneis_japonica, -orthogroup))
 
 orthogroups_psam_CAFE_cols <-
   colnames(orthogroups_cafe %>% select(-c(psammoneis, orthogroup, desc)))
 
 # Orthogroups with multiple diatoms
 orthogroups_diatom_only <-
-  orthogroups %>% 
+  orthogroups_psam %>% 
   select(-nannochloropsis_gaditana, -ectocarpus_siliculosus) %>% 
-      filter(!if_all(colnames(orthogroups %>% select(-psammoneis_japonica, -orthogroup, -nannochloropsis_gaditana, -ectocarpus_siliculosus)), ~ is.na(.))) 
+      filter(!if_all(colnames(orthogroups_psam %>% select(-psammoneis_japonica, -orthogroup, -nannochloropsis_gaditana, -ectocarpus_siliculosus)), ~ is.na(.))) 
 
 # Filtering diatom data to include only Phaeo and Seminavis
 orthogroups_phaeo_seminavis <-
@@ -2351,7 +2354,7 @@ orthogroups_phaeo_seminavis <-
 
 # subset orthogroups where psammoneis is the only gene donor
 psam_only_orths <-  
-  orthogroups %>% 
+  orthogroups_psam%>% 
   filter(if_all(all_of(orthogroups_psam_cols), ~ is.na(.))) %>% 
   select(orthogroup, psammoneis_japonica) %>% 
   mutate(gene_count = str_count(psammoneis_japonica, ',')+1)
@@ -2376,7 +2379,7 @@ psam_only_orths %>%
 
 # Let's try the reverse and filter out the HGT hits and then visualize the missingness of our data
 orthogroups_hgt_hits <-
-  orthogroups %>% 
+  orthogroups_psam %>% 
   filter(orthogroup %in% hgt_index_output_orth$orthogroup)
 
 # Missing Data visualization
