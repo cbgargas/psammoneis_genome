@@ -1883,13 +1883,89 @@ orthogroups_total <-
   read_tsv(here::here('data','02_hgt_index','orthofinder_psammoneis_wade','OrthoFinder','Results_May12','Orthogroups','Orthogroups.tsv')) %>% 
   as.data.frame() %>% 
   clean_names() %>% 
-  mutate(across(2:12, ~ str_count(.x, ',')+1, .names = "{col}_total_genes")) %>% # use across to calculate # of genes per taxon in each OG and write the output as new columns
-  mutate(across(ends_with("_total_genes"), ~ ifelse(is.na(.x), 0, .x))) # go through all of the newly created columns and convert NAs to zeroes
+  mutate(across(
+    .cols = 2:13,
+    .fns = ~ str_count(.x, ',')+1, 
+    .names = "{col}_total_genes")) %>% # use across to calculate # of genes per taxon in each OG and write the output as new columns
+  mutate(across(
+    .cols = ends_with("_total_genes"), 
+    .fns = ~ ifelse(is.na(.x), 0, .x))) %>% # go through all of the newly created columns and convert NAs to zeroes
+  # mutate(non_pennate_sum = rowSums(across(c(thalassiosira_pseudonana_total_genes, 
+  #                cyclotella_cryptica_total_genes, 
+  #                ectocarpus_siliculosus_total_genes, 
+  #                nannochloropsis_gaditana_total_genes))))
+  mutate(group =
+           case_when(
+                 rowSums(across(c(thalassiosira_pseudonana_total_genes, 
+                 cyclotella_cryptica_total_genes, 
+                 ectocarpus_siliculosus_total_genes, 
+                 nannochloropsis_gaditana_total_genes,
+                 psammoneis_japonica_total_genes,
+                 fistulifera_solaris_total_genes,
+                 fragilariopsis_cylindrus_total_genes))) == 0 &
+                 seminavis_robusta_total_genes >= 1 &
+                 pseudonitzschia_multistriata_total_genes >= 1 &
+                 pseudonitzschia_multiseries_total_genes >= 1 &
+                 phaeodactylum_tricornutum_total_genes >= 1 &
+                 nitzschia_nitz4_total_genes >= 1
+                   ~ "raphid_pennate",
+                 rowSums(across(c(thalassiosira_pseudonana_total_genes, 
+                 cyclotella_cryptica_total_genes, 
+                 ectocarpus_siliculosus_total_genes, 
+                 nannochloropsis_gaditana_total_genes))) == 0 ~ "pennate"
 
+             
+             )
+  )
+  
 orthogroups_cafe <- 
   read_tsv(here::here('data','08_gene_families','CAFE','Orthogroups.GeneCount.CAFE.txt')) %>% 
   as.data.frame() %>% 
-  clean_names() 
+  clean_names()  %>% 
+  select(-desc) %>% 
+  mutate(group =
+           case_when(
+                 rowSums(across(c(thalassiosira_pseudonana, 
+                 cyclotella_cryptica, 
+                 ectocarpus_siliculosus, 
+                 nannochloropsis_gaditana,
+                 psammoneis_japonica,
+                 fistulifera_solaris,
+                 fragilariopsis_cylindrus))) == 0 &
+                 seminavis_robusta >= 1 &
+                 pseudonitzschia_multistriata >= 1 &
+                 pseudonitzschia_multiseries >= 1 &
+                 phaeodactylum_tricornutum >= 1 &
+                 nitzschia_nitz4 >= 1
+                   ~ "raphid_pennate_all",
+                 rowSums(across(c(thalassiosira_pseudonana, 
+                 cyclotella_cryptica, 
+                 ectocarpus_siliculosus, 
+                 nannochloropsis_gaditana,
+                 psammoneis_japonica,
+                 fistulifera_solaris,
+                 fragilariopsis_cylindrus))) == 0 &
+                 rowSums(across(c(seminavis_robusta,
+                 pseudonitzschia_multistriata,
+                 pseudonitzschia_multiseries,
+                 phaeodactylum_tricornutum,
+                 nitzschia_nitz4))) >= 1
+                   ~ "raphid_pennate_any",
+                psammoneis_japonica >= 1 &
+                 fistulifera_solaris >= 1 &
+                 fragilariopsis_cylindrus >= 1 &
+                 seminavis_robusta >= 1 &
+                 pseudonitzschia_multistriata >= 1 &
+                 pseudonitzschia_multiseries >= 1 &
+                 phaeodactylum_tricornutum >= 1 &
+                 nitzschia_nitz4 >= 1~ "pennate_all",
+                 rowSums(across(c(thalassiosira_pseudonana, 
+                 cyclotella_cryptica, 
+                 ectocarpus_siliculosus, 
+                 nannochloropsis_gaditana))) == 0 ~ "pennate_any"
+
+             )
+  )
   
 orthogroups_cafe_psammoneis <- 
   read_tsv(here::here('data','08_gene_families','CAFE','Orthogroups.GeneCount.CAFE.txt')) %>% 
@@ -1901,17 +1977,23 @@ orthogroups_psam <-
   read_tsv(here::here('data','02_hgt_index','orthofinder_psammoneis_wade','OrthoFinder','Results_May12','Orthogroups','Orthogroups_Psam_filtered.tsv')) %>% 
   as.data.frame() %>% 
   clean_names() %>% 
-  mutate(psam_gene_count = str_count(psammoneis_japonica, ',')+1) # add this to check that we have the correct total for psam coding genes
+  mutate(across(
+    .cols = 2:13, 
+    ~ str_count(.x, ',')+1, 
+    .names = "{col}_total_genes")) %>% # use across to calculate # of genes per taxon in each OG and write the output as new columns
+  mutate(across(
+    .cols =ends_with("_total_genes"), 
+    ~ ifelse(is.na(.x), 0, .x))) # go through all of the newly created columns and convert NAs to zeroes
+
+# check that we have 15170 genes in total
 orthogroups_psam %>% 
-  summarise(psam_gene_total = sum(psam_gene_count)) # check that we have 15170 genes in total
+  summarise(psam_gene_total = sum(psammoneis_japonica_total_genes)) 
 
 # read in unnassigned genes from orthofidner
 orthogroups_unassigned <- 
     read_tsv(here::here('data','02_hgt_index','orthofinder_psammoneis_wade','OrthoFinder','Results_May12','Orthogroups','Orthogroups_UnassignedGenes.tsv')) %>% 
   as.data.frame() %>% 
   clean_names()
-
-
 
 # read in UniProt information for each sseqid in our blast databases
 uniprot_reviewed <-
@@ -1967,7 +2049,8 @@ d_r_hOrth <-
   )) %>% # here we replace all null values in recipient and donor bitscores with zeros. This is necessary to assign our 'strong' domain classes.
   mutate(h = bitscore_d - bitscore_r) %>% # calculate HGT index (h)
   group_by(orthogroup) %>% # necessary to calculate h_orth
-  dplyr::summarise(dplyr::across(dplyr::starts_with("h"),
+  dplyr::summarise(dplyr::across(
+    .cols = dplyr::starts_with("h"),
     ~ mean(.x, na.rm = TRUE),
     .names = "{.col}_orth"
   )) %>% # Calculate h_orth for each orthogroup (mean h per orthogroup)
@@ -3963,8 +4046,9 @@ p6 <-
   melt() %>%
   mutate(Category = replace(Category, Category == "Oxygen metabolism (Oxidative phosphorylation Complex IV)", "Oxygen metabolism")) %>%
   filter(!variable == "sum") %>%
-    mutate(across(where(is.numeric),
-                factor)) %>% 
+    mutate(across(
+      .cols = where(is.numeric),
+      factor)) %>% 
   mutate(variable = str_remove(variable, "genome_")) %>% 
   ggplot(aes(variable, fct_rev(Category), fill = value)) +
   geom_tile(aes(fill = value)) +
@@ -3995,8 +4079,9 @@ p6 <-
 p7 <-
   metabolic_FunctionHit %>%
   filter(!sum == 0) %>%
-      mutate(across(where(is.numeric),
-                factor)) %>% 
+      mutate(across(
+        .cols = where(is.numeric),
+        factor)) %>% 
   ggplot(aes(Total, fct_rev(Category), fill = sum)) +
   geom_tile() +
   scale_fill_manual(name = "Total presence in genomes", 
@@ -4070,8 +4155,9 @@ p9 <-
   melt() %>%
   mutate(Category = replace(Category, Category == "Oxygen metabolism (Oxidative phosphorylation Complex IV)", "Oxygen metabolism")) %>%
   filter(!variable == "sum") %>%
-    mutate(across(where(is.numeric),
-                factor)) %>% 
+    mutate(across(
+      .cols = where(is.numeric),
+      factor)) %>% 
   mutate(variable = str_remove(variable, "genome_")) %>% 
   ggplot(aes(variable, fct_rev(Function), fill = value)) +
   geom_tile(aes(fill = value)) +
@@ -4102,8 +4188,9 @@ p9 <-
 p10 <-
   metabolic_FunctionHit %>%
   filter(!sum == 0) %>%
-      mutate(across(where(is.numeric),
-                factor)) %>% 
+      mutate(across(
+        .cols = where(is.numeric),
+        factor)) %>% 
   ggplot(aes(Total, fct_rev(Function), fill = sum)) +
   geom_tile() +
   scale_fill_manual(name = "Total presence in genomes", 
