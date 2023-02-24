@@ -82,6 +82,9 @@ rm(
   pkgs_tidylog
 )
 
+count_nonNA_func <- function(x) sum(!is.na(x)) 
+count_NA_func <- function(x) sum(is.na(x)) 
+
 ```
 
 Note: the full code for all scripts mentioned in this document can be found in the appendix at the end of this RMD file.
@@ -1883,89 +1886,48 @@ orthogroups_total <-
   read_tsv(here::here('data','02_hgt_index','orthofinder_psammoneis_wade','OrthoFinder','Results_May12','Orthogroups','Orthogroups.tsv')) %>% 
   as.data.frame() %>% 
   clean_names() %>% 
+  mutate(proteomes_per_OG = apply(across(2:13), 1, count_nonNA_func)) %>% 
+  mutate(grouping = 
+             case_when(
+              is.na(psammoneis_japonica) &
+                 is.na(nitzschia_nitz4) &
+                 is.na(pseudonitzschia_multistriata) &
+                 is.na(fistulifera_solaris) &
+                 is.na(pseudonitzschia_multiseries) &
+                 is.na(fragilariopsis_cylindrus) &
+                 is.na(phaeodactylum_tricornutum) &
+                 is.na(psammoneis_japonica) &
+                 is.na(seminavis_robusta) &
+                 is.na(ectocarpus_siliculosus) &
+                 is.na(nannochloropsis_gaditana) ~ "centric",
+              is.na(psammoneis_japonica) &
+                 is.na(cyclotella_cryptica) &
+                 is.na(thalassiosira_pseudonana) &
+                 is.na(ectocarpus_siliculosus) &
+                 is.na(nannochloropsis_gaditana) ~ "raphid",
+               is.na(cyclotella_cryptica) &
+                 is.na(thalassiosira_pseudonana) &
+                 is.na(ectocarpus_siliculosus) &
+                 is.na(nannochloropsis_gaditana) ~ "pennate",
+               is.na(ectocarpus_siliculosus) & 
+                 is.na(nannochloropsis_gaditana) ~ "diatom"
+             )
+  ) %>% 
+  replace_na(list(grouping = "all")) %>% 
+  filter(!proteomes_per_OG == 1) %>% 
   mutate(across(
     .cols = 2:13,
     .fns = ~ str_count(.x, ',')+1, 
     .names = "{col}_total_genes")) %>% # use across to calculate # of genes per taxon in each OG and write the output as new columns
   mutate(across(
     .cols = ends_with("_total_genes"), 
-    .fns = ~ ifelse(is.na(.x), 0, .x))) %>% # go through all of the newly created columns and convert NAs to zeroes
-  # mutate(non_pennate_sum = rowSums(across(c(thalassiosira_pseudonana_total_genes, 
-  #                cyclotella_cryptica_total_genes, 
-  #                ectocarpus_siliculosus_total_genes, 
-  #                nannochloropsis_gaditana_total_genes))))
-  mutate(group =
-           case_when(
-                 rowSums(across(c(thalassiosira_pseudonana_total_genes, 
-                 cyclotella_cryptica_total_genes, 
-                 ectocarpus_siliculosus_total_genes, 
-                 nannochloropsis_gaditana_total_genes,
-                 psammoneis_japonica_total_genes,
-                 fistulifera_solaris_total_genes,
-                 fragilariopsis_cylindrus_total_genes))) == 0 &
-                 seminavis_robusta_total_genes >= 1 &
-                 pseudonitzschia_multistriata_total_genes >= 1 &
-                 pseudonitzschia_multiseries_total_genes >= 1 &
-                 phaeodactylum_tricornutum_total_genes >= 1 &
-                 nitzschia_nitz4_total_genes >= 1
-                   ~ "raphid_pennate",
-                 rowSums(across(c(thalassiosira_pseudonana_total_genes, 
-                 cyclotella_cryptica_total_genes, 
-                 ectocarpus_siliculosus_total_genes, 
-                 nannochloropsis_gaditana_total_genes))) == 0 ~ "pennate"
+    .fns = ~ ifelse(is.na(.x), 0, .x)))
 
-             
-             )
-  )
   
 orthogroups_cafe <- 
   read_tsv(here::here('data','08_gene_families','CAFE','Orthogroups.GeneCount.CAFE.txt')) %>% 
   as.data.frame() %>% 
   clean_names()  %>% 
-  select(-desc) %>% 
-  mutate(group =
-           case_when(
-                 rowSums(across(c(thalassiosira_pseudonana, 
-                 cyclotella_cryptica, 
-                 ectocarpus_siliculosus, 
-                 nannochloropsis_gaditana,
-                 psammoneis_japonica,
-                 fistulifera_solaris,
-                 fragilariopsis_cylindrus))) == 0 &
-                 seminavis_robusta >= 1 &
-                 pseudonitzschia_multistriata >= 1 &
-                 pseudonitzschia_multiseries >= 1 &
-                 phaeodactylum_tricornutum >= 1 &
-                 nitzschia_nitz4 >= 1
-                   ~ "raphid_pennate_all",
-                 rowSums(across(c(thalassiosira_pseudonana, 
-                 cyclotella_cryptica, 
-                 ectocarpus_siliculosus, 
-                 nannochloropsis_gaditana,
-                 psammoneis_japonica,
-                 fistulifera_solaris,
-                 fragilariopsis_cylindrus))) == 0 &
-                 rowSums(across(c(seminavis_robusta,
-                 pseudonitzschia_multistriata,
-                 pseudonitzschia_multiseries,
-                 phaeodactylum_tricornutum,
-                 nitzschia_nitz4))) >= 1
-                   ~ "raphid_pennate_any",
-                psammoneis_japonica >= 1 &
-                 fistulifera_solaris >= 1 &
-                 fragilariopsis_cylindrus >= 1 &
-                 seminavis_robusta >= 1 &
-                 pseudonitzschia_multistriata >= 1 &
-                 pseudonitzschia_multiseries >= 1 &
-                 phaeodactylum_tricornutum >= 1 &
-                 nitzschia_nitz4 >= 1~ "pennate_all",
-                 rowSums(across(c(thalassiosira_pseudonana, 
-                 cyclotella_cryptica, 
-                 ectocarpus_siliculosus, 
-                 nannochloropsis_gaditana))) == 0 ~ "pennate_any"
-
-             )
-  )
   
 orthogroups_cafe_psammoneis <- 
   read_tsv(here::here('data','08_gene_families','CAFE','Orthogroups.GeneCount.CAFE.txt')) %>% 
@@ -3030,6 +2992,67 @@ phyre2_subcell_loc <-
 write_tsv(
   phyre2_subcell_loc, 
   file = here("data","06_subcellular_localization_analyses","results_combined_final.tsv"))
+```
+
+```{r}
+#| label: Orthofinder hierarchical orthogroups investigation
+#| eval: true
+#| echo: false
+#| warning: false
+#| error: false
+#| output: false
+
+
+PHO_N0 <- 
+  read_tsv(here("data","02_hgt_index","orthofinder_psammoneis_wade","OrthoFinder",
+                "Results_May12","Phylogenetic_Hierarchical_Orthogroups","N0.tsv")) %>% 
+  janitor::clean_names() %>% 
+  select(where(~ !(all(is.na(.)) | all(. == "")))) %>% 
+  # mutate(across(
+  #   .cols = 4:15,
+  #   .fns = ~ str_count(.x, ',')+1, 
+  #   .names = "{col}_total_genes")) %>% 
+  # mutate(across(
+  #   .cols = ends_with("_total_genes"), 
+  #   .fns = ~ ifelse(is.na(.x), 0, .x))) %>% # go through all of the newly created columns and convert NAs to zeroes
+  # mutate(total_genes = rowSums(across(17:27), na.rm = TRUE)) %>% 
+  mutate(proteomes_per_OG = apply(across(4:15), 1, count_nonNA_func)) %>% 
+  mutate(grouping = 
+             case_when(
+              is.na(psammoneis_japonica) &
+                 is.na(nitzschia_nitz4) &
+                 is.na(pseudonitzschia_multistriata) &
+                 is.na(fistulifera_solaris) &
+                 is.na(pseudonitzschia_multiseries) &
+                 is.na(fragilariopsis_cylindrus) &
+                 is.na(phaeodactylum_tricornutum) &
+                 is.na(psammoneis_japonica) &
+                 is.na(seminavis_robusta) &
+                 is.na(ectocarpus_siliculosus) &
+                 is.na(nannochloropsis_gaditana) ~ "centric",
+              is.na(psammoneis_japonica) &
+                 is.na(cyclotella_cryptica) &
+                 is.na(thalassiosira_pseudonana) &
+                 is.na(ectocarpus_siliculosus) &
+                 is.na(nannochloropsis_gaditana) ~ "raphid",
+               is.na(cyclotella_cryptica) &
+                 is.na(thalassiosira_pseudonana) &
+                 is.na(ectocarpus_siliculosus) &
+                 is.na(nannochloropsis_gaditana) ~ "pennate",
+               is.na(ectocarpus_siliculosus) & 
+                 is.na(nannochloropsis_gaditana) ~ "diatom"
+             )
+  ) %>% 
+  replace_na(list(grouping = "all")) 
+
+PHO_N4 <- 
+  read_tsv(here("data","02_hgt_index","orthofinder_psammoneis_wade","OrthoFinder",
+                "Results_May12","Phylogenetic_Hierarchical_Orthogroups","N4.tsv")) %>% 
+  janitor::clean_names() %>% 
+  select(where(~ !(all(is.na(.)) | all(. == "")))) %>% 
+  mutate(raphid_only = ifelse(is.na(psammoneis_japonica),1,0)) %>% 
+  add_count(raphid_only)
+
 ```
 
 ------------------------------------------------------------------------
