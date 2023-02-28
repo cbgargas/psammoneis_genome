@@ -1890,31 +1890,48 @@ orthogroups_total <-
   mutate(grouping = 
              case_when(
               is.na(psammoneis_japonica) &
-                 is.na(nitzschia_nitz4) &
-                 is.na(pseudonitzschia_multistriata) &
-                 is.na(fistulifera_solaris) &
-                 is.na(pseudonitzschia_multiseries) &
-                 is.na(fragilariopsis_cylindrus) &
-                 is.na(phaeodactylum_tricornutum) &
-                 is.na(psammoneis_japonica) &
-                 is.na(seminavis_robusta) &
-                 is.na(ectocarpus_siliculosus) &
-                 is.na(nannochloropsis_gaditana) ~ "centric",
+                is.na(nitzschia_nitz4) &
+                is.na(pseudonitzschia_multistriata) &
+                is.na(fistulifera_solaris) &
+                is.na(pseudonitzschia_multiseries) &
+                is.na(fragilariopsis_cylindrus) &
+                is.na(phaeodactylum_tricornutum) &
+                is.na(psammoneis_japonica) &
+                is.na(seminavis_robusta) &
+                is.na(ectocarpus_siliculosus) &
+                is.na(nannochloropsis_gaditana) ~ "centric",
               is.na(psammoneis_japonica) &
-                 is.na(cyclotella_cryptica) &
-                 is.na(thalassiosira_pseudonana) &
-                 is.na(ectocarpus_siliculosus) &
-                 is.na(nannochloropsis_gaditana) ~ "raphid",
-               is.na(cyclotella_cryptica) &
-                 is.na(thalassiosira_pseudonana) &
-                 is.na(ectocarpus_siliculosus) &
-                 is.na(nannochloropsis_gaditana) ~ "pennate",
+                is.na(nitzschia_nitz4) &
+                is.na(pseudonitzschia_multistriata) &
+                is.na(pseudonitzschia_multiseries) &
+                is.na(fragilariopsis_cylindrus) &
+                is.na(cyclotella_cryptica) &
+                is.na(thalassiosira_pseudonana) &
+                is.na(ectocarpus_siliculosus) &
+                is.na(nannochloropsis_gaditana) ~ "raphid_clade_1",
+              is.na(psammoneis_japonica) &
+                is.na(fistulifera_solaris) &
+                is.na(phaeodactylum_tricornutum) &
+                is.na(seminavis_robusta) &
+                is.na(cyclotella_cryptica) &
+                is.na(thalassiosira_pseudonana) &
+                is.na(ectocarpus_siliculosus) &
+                is.na(nannochloropsis_gaditana) ~ "raphid_clade_2",
+              is.na(psammoneis_japonica) &
+                is.na(cyclotella_cryptica) &
+                is.na(thalassiosira_pseudonana) &
+                is.na(ectocarpus_siliculosus) &
+                is.na(nannochloropsis_gaditana) ~ "deep_raphid",
+                is.na(cyclotella_cryptica) &
+                is.na(thalassiosira_pseudonana) &
+                is.na(ectocarpus_siliculosus) &
+                is.na(nannochloropsis_gaditana) ~ "pennate",
                is.na(ectocarpus_siliculosus) & 
                  is.na(nannochloropsis_gaditana) ~ "diatom"
              )
   ) %>% 
   replace_na(list(grouping = "all")) %>% 
-  filter(!proteomes_per_OG == 1) %>% 
+  filter(!proteomes_per_OG == 1) %>% # This filters out terminal orthogroups (species specific orthogroups) so that we can look at non-terminal (at the nodes)
   mutate(across(
     .cols = 2:13,
     .fns = ~ str_count(.x, ',')+1, 
@@ -1922,6 +1939,7 @@ orthogroups_total <-
   mutate(across(
     .cols = ends_with("_total_genes"), 
     .fns = ~ ifelse(is.na(.x), 0, .x)))
+
 
   
 orthogroups_cafe <- 
