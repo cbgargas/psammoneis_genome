@@ -3389,10 +3389,10 @@ intergenic_TE_density %>%
   select(TE_density) %>% 
   table()
 
-# Now we subsample each of our TE density dataframes for genic and intergenic TEs, and replicate 500x to plot the density of our averages
+# Now we subsample each of our TE density data-frames for genic and intergenic TEs, and replicate 500x to plot the density of our averages
 replicate(500,
           mean((intergenic_TE_density %>% 
-          sample_n(17))$TE_density)
+                  slice_sample(n = 17, replace = TRUE))$TE_density)
           ) %>% 
   as.data.frame() %>% 
   ggplot(aes(x = .)) +
@@ -3400,7 +3400,7 @@ replicate(500,
 
 replicate(500,
           mean((genic_TE_density %>% 
-  sample_n(40))$TE_density)
+                  slice_sample(n = 40, replace = TRUE))$TE_density)
           ) %>% 
   as.data.frame() %>% 
   ggplot(aes(x = .)) +
