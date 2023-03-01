@@ -3347,11 +3347,14 @@ genic_TE_density %>%
 # Now we import TE desnity for all CDS annotated genes in P. japonica
 genic_mRNA_TE_density <- 
   read_tsv(here("data","09_TE_density","psamm_final.round4.all.mRNA.CDS.flanking.10kb.TE.overlapping.tsv"),
-           col_names = c("contig","start_position","end_position","gene_name","TE_density")) %>% 
+           col_names = c("contig","start_position","end_position","gene_name","TE_density"))
+
+genic_mRNA_TE_density_filtered <- 
+  genic_mRNA_TE_density %>% 
   mutate(gene_name = paste("Psammoneisjap_",gene_name, sep = "")) %>% 
-    filter(gene_name %in% blastp_results_final$qseqid) %>% 
+  filter(gene_name %in% blastp_results_final$qseqid) %>% 
   group_by(gene_name) %>% 
-    slice_head()
+  slice_head()
 
 genic_mRNA_TE_density %>% 
   select(TE_density, gene_name) %>% 
@@ -3361,7 +3364,6 @@ genic_mRNA_TE_density %>%
 # filter out ORF headers to include only intergenic HGT candidates and then create a BED file of coordinates
 intergenic_ORF_BED <-   
   ORF_headers %>%
-  filter(qseqid %in% file3_uniprot_prok_hits_0Fthru3F$qseqid) %>% 
   separate(length_orf, into = c("contig_ig_start","contig_ig_stop"), sep = "-", convert = TRUE) %>% 
   separate(coords, into = c("coords_start","coords_stop"), sep = "-", convert = TRUE) %>% 
   mutate(coords_start = coords_start+1 , coords_stop = coords_stop+1) %>% # have to add one to each so that indexing in R is possible. no need to +1 to bedtools range as bedtools uses zero-based indexing. 
@@ -3385,18 +3387,82 @@ intergenic_TE_density <-
          "psamm_final.round4.all.intergenicORFs.flanking.10kb.TE.overlapping.tsv"),
     col_names = c("contig","start_position","end_position","gene_name","TE_density"))
 
-intergenic_TE_density %>% 
+intergenic_TE_density_filtered <- 
+  intergenic_TE_density %>% 
+  filter(gene_name %in% file3_uniprot_prok_hits_0Fthru3F$qseqid)
+  
+intergenic_TE_density_filtered %>% 
   select(TE_density) %>% 
   table()
 
 # Now we subsample each of our TE density data-frames for genic and intergenic TEs, and replicate 500x to plot the density of our averages
+# 
+vlines_ig <- 
+  as.data.frame(table(intergenic_TE_density_filtered$TE_density)) %>% 
+  mutate(xint = as.numeric(as.character(Var1)))
+
 replicate(500,
-          mean((intergenic_TE_density %>% 
+          mean((genic_mRNA_TE_density %>% 
+                  slice_sample(n = 40, replace = TRUE))$TE_density)
+          ) %>% 
+  as.data.frame() %>% 
+  ggplot(aes(x = .)) +
+  geom_density() +
+  geom_vline(data = vlines_ig, 
+             aes(xintercept = xint, colour = Freq), 
+             linetype = "longdash") +
+  viridis::scale_color_viridis(discrete=F, begin = 0.15, end = 1, direction = 1) +
+  theme(
+    text = element_text(size = 12, color = "black"),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    # Change axis line
+    axis.line = element_line(colour = "black")
+    # indicate position of legend
+    # legend.position = "none",
+    # legend.title = element_blank()
+    )
+
+
+vlines_g <- 
+  as.data.frame(table(genic_mRNA_TE_density_filtered$TE_density)) %>% 
+  mutate(xint = as.numeric(as.character(Var1)))
+
+replicate(500,
+          mean((genic_mRNA_TE_density %>% 
                   slice_sample(n = 17, replace = TRUE))$TE_density)
           ) %>% 
   as.data.frame() %>% 
   ggplot(aes(x = .)) +
-  geom_density()
+  geom_density() +
+  geom_vline(data = vlines_g, 
+             aes(xintercept = xint, colour = Freq), 
+             linetype = "longdash") +
+  viridis::scale_color_viridis(discrete=F, begin = 0.3, end = 1, direction = 1) +
+  theme(
+    text = element_text(size = 12, color = "black"),
+    # Hide panel borders and remove grid lines
+    panel.border = element_blank(),
+    # panel.grid.major.x = element_line(colour = "grey", linetype = 3),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    # Remove panel background
+    panel.background = element_blank(),
+    # remove unnecessary text
+    # Change axis line
+    axis.line = element_line(colour = "black")
+    # indicate position of legend
+    # legend.position = "none",
+    # legend.title = element_blank()
+    )
 
 replicate(500,
           mean((genic_TE_density %>% 
@@ -3404,8 +3470,34 @@ replicate(500,
           ) %>% 
   as.data.frame() %>% 
   ggplot(aes(x = .)) +
-  geom_density()
+  geom_density() 
 
+# now let's do a t-test vs our actual values
+# calculate the observed statistic
+observed_mean_genic <- 
+  genic_mRNA_TE_density %>%
+  specify(response = TE_density) %>%
+  calculate(stat = "mean")
+
+# generate the null distribution
+null_dist_1_sample <- genic_mRNA_TE_density_filtered %>%
+  specify(response = TE_density) %>%
+  hypothesize(null = "point", mu = 1) %>%
+  generate(reps = 1000, type = "bootstrap") %>%
+  calculate(stat = "mean")
+
+# visualize the null distribution and test statistic!
+null_dist_1_sample %>%
+  visualize() + 
+  shade_p_value(observed_mean_genic,
+                direction = "two-sided")
+
+# calculate the p value from the test statistic and null distribution
+p_value_1_sample <- null_dist_1_sample %>%
+  get_p_value(obs_stat = observed_mean_genic,
+              direction = "two-sided")
+
+p_value_1_sample
 ```
 
 # Final Figures
